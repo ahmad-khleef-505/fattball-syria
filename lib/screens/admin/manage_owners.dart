@@ -5,6 +5,7 @@ import 'package:fattball/screens/admin/activate_subscription.dart';
 import 'package:fattball/services/admin_service.dart';
 import 'package:fattball/screens/admin/manage_bookings.dart';
 import 'package:fattball/widgets/responsive_scaffold.dart';
+import 'package:fattball/widgets/sports_loading.dart';
 import 'package:fattball/widgets/glass_snack_bar.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -170,12 +171,13 @@ class _ManageOwnersScreenState extends ConsumerState<ManageOwnersScreen> {
                 }).toList();
 
                 if (filtered.isEmpty) {
-                  return Center(
-                    child: Text(
-                      query.isEmpty
-                          ? 'لا يوجد أصحاب ملاعب مسجلون.'
-                          : 'لا توجد نتائج مطابقة.',
-                    ),
+                  return SportsEmptyState(
+                    title: query.isEmpty
+                        ? 'لا يوجد أصحاب ملاعب مسجلون'
+                        : 'لا توجد نتائج مطابقة',
+                    message: query.isEmpty
+                        ? 'ستظهر هنا حسابات أصحاب الملاعب المسجلة.'
+                        : 'جرّب البحث باسم أو بريد إلكتروني آخر.',
                   );
                 }
 

@@ -1,0 +1,35 @@
+﻿
+  error - Missing concrete implementation of 'State.build'. Try implementing the missing method, or make the class abstract - 
+lib\screens\auth\login_screen.dart:19:7 - non_abstract_class_inherits_abstract_member
+  error - The name 'initState' is already defined. Try renaming one of the declarations - lib\screens\auth\login_screen.dart:34:8 - 
+duplicate_definition
+  error - A try block must be followed by an 'on', 'catch', or 'finally' clause. Try adding either a catch or finally clause, or remove the try 
+statement - lib\screens\auth\login_screen.dart:51:5 - missing_catch_or_finally
+  error - Expected to find ';' - lib\screens\auth\login_screen.dart:58:7 - expected_token
+  error - Expected an identifier - lib\screens\auth\login_screen.dart:58:9 - missing_identifier
+  error - Unexpected text ';'. Try removing the text - lib\screens\auth\login_screen.dart:58:9 - unexpected_token
+  error - Undefined name 'prefs'. Try correcting the name to one that is defined, or defining the name - 
+lib\screens\auth\login_screen.dart:59:15 - undefined_identifier
+  error - Undefined class 'on'. Try changing the name to the name of an existing class, or creating a class with the name 'on' - 
+lib\screens\auth\login_screen.dart:61:7 - undefined_class
+  error - Expected to find ';' - lib\screens\auth\login_screen.dart:61:10 - expected_token
+  error - Expected a class member. Try placing this code inside a class member - lib\screens\auth\login_screen.dart:61:31 - expected_class_member
+  error - Expected an identifier - lib\screens\auth\login_screen.dart:61:37 - missing_identifier
+  error - Expected a class member. Try placing this code inside a class member - lib\screens\auth\login_screen.dart:63:7 - expected_class_member
+  error - Expected an identifier - lib\screens\auth\login_screen.dart:63:15 - missing_identifier
+  error - Methods must have an explicit list of parameters. Try adding a parameter list - lib\screens\auth\login_screen.dart:63:15 - 
+missing_method_parameters
+  error - Undefined name '_emailController'. Try correcting the name to one that is defined, or defining the name - 
+lib\screens\auth\login_screen.dart:69:9 - undefined_identifier
+  error - Undefined name 'ref'. Try correcting the name to one that is defined, or defining the name - lib\screens\auth\login_screen.dart:75:13 
+- undefined_identifier
+  error - Undefined name '_emailController'. Try correcting the name to one that is defined, or defining the name - 
+lib\screens\auth\login_screen.dart:77:35 - undefined_identifier
+  error - Undefined name 'mounted'. Try correcting the name to one that is defined, or defining the name - 
+lib\screens\auth\login_screen.dart:78:11 - undefined_identifier
+  error - Undefined name 'mounted'. Try correcting the name to one that is defined, or defining the name - 
+lib\screens\auth\login_screen.dart:82:11 - undefined_identifier
+  error - Undefined name 'context'. Try correcting the name to one that is defined, or defining the name - 
+lib\screens\auth\login_screen.dart:87:26 - undefined_identifier
+
+

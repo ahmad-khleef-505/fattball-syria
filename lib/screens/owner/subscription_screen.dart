@@ -6,11 +6,14 @@ import 'package:fattball/services/auth_service.dart';
 import 'package:fattball/providers/auth_provider.dart';
 import 'package:fattball/screens/owner/owner_bookings.dart';
 import 'package:fattball/widgets/responsive_scaffold.dart';
+import 'package:fattball/widgets/sports_loading.dart';
 import 'package:fattball/widgets/glass_snack_bar.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:flutter/services.dart';
 import 'package:timezone/data/latest.dart' as timezone_data;
 import 'package:timezone/timezone.dart' as timezone;
+import 'package:url_launcher/url_launcher.dart';
 
 class OwnerSubscriptionScreen extends ConsumerStatefulWidget {
   const OwnerSubscriptionScreen({super.key, required this.owner});
@@ -25,6 +28,9 @@ class OwnerSubscriptionScreen extends ConsumerStatefulWidget {
 class _OwnerSubscriptionScreenState
     extends ConsumerState<OwnerSubscriptionScreen> {
   late final timezone.Location _damascus;
+  bool _isSigningOut = false;
+  static const int _minimumSubscriptionMonths = 1;
+  static const int _maximumSubscriptionMonths = 12;
 
   @override
   void initState() {
@@ -42,26 +48,141 @@ class _OwnerSubscriptionScreenState
         '${local.minute.toString().padLeft(2, '0')}';
   }
 
-  Future<void> _showRenewalPlaceholder() async {
+  String _subscriptionDurationLabel(int months) {
+    return switch (months) {
+      1 => 'شهر واحد',
+      2 => 'شهران',
+      >= 3 && <= 10 => '$months أشهر',
+      _ => '$months شهراً',
+    };
+  }
+
+  String _whatsAppMessage(int months) {
+    return 'مرحباً، أريد تفعيل اشتراك ملعبي في تطبيق Fattball.\n'
+        'المدة المختارة: ${_subscriptionDurationLabel(months)}\n'
+        'أرجو إرسال باركود شام كاش لإتمام عملية الدفع.\n'
+        'شكراً لكم.';
+  }
+
+  Future<void> _showRenewalDialog() async {
     await showDialog<void>(
       context: context,
-      builder: (context) => AlertDialog(
-        title: const Text('تجديد الاشتراك'),
-        content: const Text(
-          'بوابة الدفع غير مربوطة حالياً. لن يتم خصم أي مبلغ أو تفعيل الاشتراك. '
-          'سيصبح التجديد متاحاً بعد ربط وسيلة الدفع.',
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.of(context).pop(),
-            child: const Text('حسناً'),
+      builder: (dialogContext) {
+        var selectedMonths = _minimumSubscriptionMonths;
+        var isOpeningWhatsApp = false;
+
+        return StatefulBuilder(
+          builder: (context, setDialogState) => AlertDialog(
+            title: const Text('تجديد الاشتراك'),
+            content: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                const Text(
+                  'لتفعيل اشتراكك، يرجى التواصل معنا عبر واتساب لإرسال '
+                  'باركود شام كاش. سيتم تفعيل اشتراكك فوراً بعد تأكيد الدفع.',
+                ),
+                const SizedBox(height: 20),
+                DropdownButtonFormField<int>(
+                  value: selectedMonths,
+                  decoration: const InputDecoration(
+                    labelText: 'مدة الاشتراك',
+                    prefixIcon: Icon(Icons.calendar_month_outlined),
+                  ),
+                  items: [
+                    for (var months = _minimumSubscriptionMonths;
+                        months <= _maximumSubscriptionMonths;
+                        months++)
+                      DropdownMenuItem(
+                        value: months,
+                        child: Text(_subscriptionDurationLabel(months)),
+                      ),
+                  ],
+                  onChanged: isOpeningWhatsApp
+                      ? null
+                      : (months) {
+                          if (months == null) return;
+                          setDialogState(() => selectedMonths = months);
+                        },
+                ),
+              ],
+            ),
+            actions: [
+              TextButton(
+                onPressed: isOpeningWhatsApp
+                    ? null
+                    : () => Navigator.of(dialogContext).pop(),
+                child: const Text('إغلاق'),
+              ),
+              FilledButton.icon(
+                style: FilledButton.styleFrom(
+                  backgroundColor: const Color(0xFF25D366),
+                  foregroundColor: Colors.white,
+                ),
+                onPressed: isOpeningWhatsApp
+                    ? null
+                    : () async {
+                        setDialogState(() => isOpeningWhatsApp = true);
+                        final message = _whatsAppMessage(selectedMonths);
+                        final uri = Uri.parse(
+                          'https://wa.me/963981359229'
+                          '?text=${Uri.encodeComponent(message)}',
+                        );
+
+                        try {
+                          final launched = await launchUrl(
+                            uri,
+                            mode: LaunchMode.externalApplication,
+                          );
+                          if (!launched && mounted) {
+                            ScaffoldMessenger.of(this.context).showSnackBar(
+                              glassSnackBar(
+                                content: const Text(
+                                  'تعذر فتح واتساب. تحقق من تثبيت التطبيق '
+                                  'أو أعد المحاولة.',
+                                ),
+                              ),
+                            );
+                          }
+                        } on PlatformException {
+                          if (mounted) {
+                            ScaffoldMessenger.of(this.context).showSnackBar(
+                              glassSnackBar(
+                                content: const Text(
+                                  'تعذر فتح واتساب على هذا الجهاز.',
+                                ),
+                              ),
+                            );
+                          }
+                        } finally {
+                          if (dialogContext.mounted) {
+                            setDialogState(() => isOpeningWhatsApp = false);
+                          }
+                        }
+                      },
+                icon: isOpeningWhatsApp
+                    ? const SizedBox.square(
+                        dimension: 18,
+                        child: CircularProgressIndicator(
+                          strokeWidth: 2,
+                          color: Colors.white,
+                        ),
+                      )
+                    : const Icon(Icons.chat_rounded),
+                label: Text(
+                  isOpeningWhatsApp ? 'جارٍ فتح واتساب...' : 'تواصل عبر واتساب',
+                ),
+              ),
+            ],
           ),
-        ],
-      ),
+        );
+      },
     );
   }
 
   Future<void> _signOut() async {
+    if (_isSigningOut) return;
+    setState(() => _isSigningOut = true);
     try {
       await ref.read(authServiceProvider).signOut();
     } on AuthServiceException catch (error) {
@@ -70,6 +191,8 @@ class _OwnerSubscriptionScreenState
           glassSnackBar(content: Text(error.message)),
         );
       }
+    } finally {
+      if (mounted) setState(() => _isSigningOut = false);
     }
   }
 
@@ -125,11 +248,16 @@ class _OwnerSubscriptionScreenState
         }
       },
       actions: [
-          IconButton(
-            tooltip: 'تسجيل الخروج',
-            onPressed: _signOut,
-            icon: const Icon(Icons.logout),
-          ),
+        IconButton(
+          tooltip: 'تسجيل الخروج',
+          onPressed: _isSigningOut ? null : _signOut,
+          icon: _isSigningOut
+              ? const SizedBox.square(
+                  dimension: 20,
+                  child: CircularProgressIndicator(strokeWidth: 2),
+                )
+              : const Icon(Icons.logout),
+        ),
       ],
       body: StreamBuilder<DocumentSnapshot<Map<String, dynamic>>>(
         stream: userStream,
@@ -223,7 +351,7 @@ class _OwnerSubscriptionScreenState
                       SizedBox(
                         width: double.infinity,
                         child: FilledButton.icon(
-                          onPressed: _showRenewalPlaceholder,
+                          onPressed: _showRenewalDialog,
                           icon: const Icon(Icons.refresh),
                           label: Text(
                             'تجديد الاشتراك '
@@ -289,11 +417,9 @@ class _OwnerSubscriptionScreenState
                   );
 
                   if (subscriptions.isEmpty) {
-                    return const Card(
-                      child: Padding(
-                        padding: EdgeInsets.all(16),
-                        child: Text('لا يوجد سجل اشتراكات حتى الآن.'),
-                      ),
+                    return const SportsEmptyState(
+                      title: 'لا يوجد سجل اشتراكات بعد',
+                      message: 'ستظهر تفاصيل اشتراكاتك هنا بعد تفعيلها.',
                     );
                   }
 

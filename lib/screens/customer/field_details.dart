@@ -7,6 +7,7 @@ import 'package:fattball/widgets/glass_snack_bar.dart';
 import 'package:fattball/widgets/field_reviews_section.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:share_plus/share_plus.dart';
 import 'package:url_launcher/url_launcher.dart';
 
 class FieldDetails extends StatelessWidget {
@@ -79,88 +80,104 @@ class FieldDetails extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(title: Text(field.name)),
+      appBar: AppBar(
+      title: Text(field.name),
+      actions: [
+        IconButton(
+          icon: const Icon(Icons.share),
+          onPressed: () {
+            Share.share(
+              'اسم الملعب: ${field.name}\n'
+              'الموقع: ${field.governorate} - ${field.district}\n'
+              'https://fattball.app/field/${field.fieldId}',
+            );
+          },
+        ),
+      ],
+    ),
       body: ResponsiveContent(
         padding: EdgeInsets.zero,
         child: ListView(
-        padding: const EdgeInsets.only(bottom: 100),
-        children: [
-          if (field.images.isNotEmpty)
-            SizedBox(
-              height: 260,
-              child: PageView.builder(
-                itemCount: field.images.length,
-                itemBuilder: (context, index) => Image.network(
-                  field.images[index],
-                  fit: BoxFit.cover,
-                  errorBuilder: (_, __, ___) => const ColoredBox(
-                    color: Color(0xFFE7EEE9),
-                    child: Center(child: Icon(Icons.broken_image_outlined)),
-                  ),
-                ),
-              ),
-            )
-          else
-            const SizedBox(
-              height: 200,
-              child: ColoredBox(
-                color: Color(0xFFE7EEE9),
-                child: Center(child: Icon(Icons.sports_soccer, size: 72)),
-              ),
-            ),
-          Padding(
-            padding: const EdgeInsets.all(20),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  field.name,
-                  style: Theme.of(context).textTheme.headlineSmall,
-                ),
-                const SizedBox(height: 12),
-                _DetailRow(
-                  icon: Icons.location_on_outlined,
-                  label: '${field.governorate} - ${field.district}',
-                ),
-                _DetailRow(icon: Icons.place_outlined, label: field.address),
-                _DetailRow(
-                  icon: Icons.access_time,
-                  label: '${field.openTime} - ${field.closeTime}',
-                ),
-                _DetailRow(
-                  icon: Icons.attach_money,
-                  label: '${field.pricePerHour.toStringAsFixed(2)} USD / ساعة',
-                ),
-                const SizedBox(height: 20),
-                Text(
-                  'عن الملعب',
-                  style: Theme.of(context).textTheme.titleLarge,
-                ),
-                const SizedBox(height: 8),
-                Text(field.description),
-                const SizedBox(height: 24),
-                OutlinedButton.icon(
-                  onPressed: () => Navigator.of(context).push(
-                    MaterialPageRoute<void>(
-                      builder: (_) => FieldCoachesScreen(
-                        field: field,
-                        customer: customer,
-                      ),
+          padding: const EdgeInsets.only(bottom: 100),
+          children: [
+            if (field.images.isNotEmpty)
+              SizedBox(
+                height: 260,
+                child: PageView.builder(
+                  itemCount: field.images.length,
+                  itemBuilder: (context, index) => Image.network(
+                    field.images[index],
+                    fit: BoxFit.cover,
+                    errorBuilder: (_, __, ___) => ColoredBox(
+                      color:
+                          Theme.of(context).colorScheme.surfaceContainerHighest,
+                      child: Center(child: Icon(Icons.broken_image_outlined)),
                     ),
                   ),
-                  icon: const Icon(Icons.sports),
-                  label: const Text('احجز جلسة تدريب لطفلك'),
                 ),
-                const SizedBox(height: 24),
-                FieldReviewsSection(
-                  fieldId: field.fieldId,
-                  customer: customer,
+              )
+            else
+              SizedBox(
+                height: 200,
+                child: ColoredBox(
+                  color: Theme.of(context).colorScheme.surfaceContainerHighest,
+                  child: Center(child: Icon(Icons.sports_soccer, size: 72)),
                 ),
-              ],
+              ),
+            Padding(
+              padding: const EdgeInsets.all(20),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    field.name,
+                    style: Theme.of(context).textTheme.headlineSmall,
+                  ),
+                  const SizedBox(height: 12),
+                  _DetailRow(
+                    icon: Icons.location_on_outlined,
+                    label: '${field.governorate} - ${field.district}',
+                  ),
+                  _DetailRow(icon: Icons.place_outlined, label: field.address),
+                  _DetailRow(
+                    icon: Icons.access_time,
+                    label: '${field.openTime} - ${field.closeTime}',
+                  ),
+                  _DetailRow(
+                    icon: Icons.attach_money,
+                    label:
+                        '${field.pricePerHour.toStringAsFixed(2)} USD / ساعة',
+                  ),
+                  const SizedBox(height: 20),
+                  Text(
+                    'عن الملعب',
+                    style: Theme.of(context).textTheme.titleLarge,
+                  ),
+                  const SizedBox(height: 8),
+                  Text(field.description),
+                  const SizedBox(height: 24),
+                  OutlinedButton.icon(
+                    onPressed: () => Navigator.of(context).push(
+                      MaterialPageRoute<void>(
+                        builder: (_) => FieldCoachesScreen(
+                          field: field,
+                          customer: customer,
+                        ),
+                      ),
+                    ),
+                    icon: const Icon(Icons.sports),
+                    label: const Text('احجز جلسة تدريب لطفلك'),
+                  ),
+                  const SizedBox(height: 24),
+                  FieldReviewsSection(
+                    fieldId: field.fieldId,
+                    customer: customer,
+                  ),
+                ],
+              ),
             ),
-          ),
-        ],
-      ),
+          ],
+        ),
       ),
       bottomNavigationBar: SafeArea(
         minimum: const EdgeInsets.all(16),

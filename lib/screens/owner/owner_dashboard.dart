@@ -8,6 +8,7 @@ import 'package:fattball/screens/owner/promo_codes_screen.dart';
 import 'package:fattball/screens/owner/subscription_screen.dart';
 import 'package:fattball/screens/tournaments/tournament_screens.dart';
 import 'package:fattball/screens/community/community_board_screen.dart';
+import 'package:fattball/screens/profile/profile_screen.dart';
 import 'package:fattball/widgets/responsive_scaffold.dart';
 import 'package:fattball/widgets/sports_loading.dart';
 import 'package:fattball/widgets/glass_snack_bar.dart';
@@ -68,6 +69,10 @@ class OwnerDashboard extends ConsumerWidget {
           label: 'الاشتراك',
           icon: Icons.workspace_premium_outlined,
         ),
+        ResponsiveDestination(
+          label: 'حسابي',
+          icon: Icons.person_outline,
+        ),
       ],
       selectedIndex: 0,
       onDestinationSelected: (index) {
@@ -81,6 +86,12 @@ class OwnerDashboard extends ConsumerWidget {
           Navigator.of(context).push(
             MaterialPageRoute<void>(
               builder: (_) => OwnerSubscriptionScreen(owner: user),
+            ),
+          );
+        } else if (index == 3) {
+          Navigator.of(context).push(
+            MaterialPageRoute<void>(
+              builder: (_) => ProfileScreen(user: user),
             ),
           );
         }
@@ -226,16 +237,19 @@ class OwnerDashboard extends ConsumerWidget {
                             width: 64,
                             height: 64,
                             child: field.images.isEmpty
-                                ? const ColoredBox(
-                                    color: Color(0xFFE7EEE9),
+                                ? ColoredBox(
+                                    color: Theme.of(context)
+                                        .colorScheme
+                                        .surfaceContainerHighest,
                                     child: Icon(Icons.sports_soccer),
                                   )
                                 : Image.network(
                                     field.images.first,
                                     fit: BoxFit.cover,
-                                    errorBuilder: (_, __, ___) =>
-                                        const ColoredBox(
-                                      color: Color(0xFFE7EEE9),
+                                    errorBuilder: (_, __, ___) => ColoredBox(
+                                      color: Theme.of(context)
+                                          .colorScheme
+                                          .surfaceContainerHighest,
                                       child: Icon(Icons.broken_image_outlined),
                                     ),
                                   ),

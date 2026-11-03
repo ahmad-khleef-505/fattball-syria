@@ -4,6 +4,7 @@ import 'package:fattball/models/booking_model.dart';
 import 'package:fattball/models/coach_model.dart';
 import 'package:fattball/models/field_model.dart';
 import 'package:fattball/models/user_model.dart';
+import 'package:cloud_functions/cloud_functions.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:timezone/data/latest.dart' as timezone_data;
 import 'package:timezone/timezone.dart' as timezone;
@@ -44,13 +45,17 @@ class BookingService {
   BookingService({
     FirebaseFirestore? firestore,
     FirebaseAuth? auth,
+    FirebaseFunctions? functions,
   })  : _firestore = firestore ?? FirebaseFirestore.instance,
-        _auth = auth ?? FirebaseAuth.instance {
+        _auth = auth ?? FirebaseAuth.instance,
+        _functions =
+            functions ?? FirebaseFunctions.instanceFor(region: 'me-central1') {
     _initializeTimeZones();
   }
 
   final FirebaseFirestore _firestore;
   final FirebaseAuth _auth;
+  final FirebaseFunctions _functions;
   static bool _timeZonesInitialized = false;
 
   static void _initializeTimeZones() {
@@ -467,6 +472,107 @@ class BookingService {
         'بيانات الحجز أو قفل المواعيد غير متوافقة.',
       );
     }
+  }
+
+  Future<void> rescheduleBooking({
+    required String bookingId,
+    required String ownerId,
+    required DateTime startAt,
+    required DateTime endAt,
+  }) async {
+    if (_auth.currentUser?.uid != ownerId) {
+      throw const BookingServiceException(
+        'سجّل الدخول بحساب صاحب الملعب لإعادة جدولة الحجز.',
+      );
+    }
+    if (!startAt.isAfter(DateTime.now()) || !endAt.isAfter(startAt)) {
+      throw const BookingServiceException('الفترة الجديدة غير صالحة.');
+    }
+
+    try {
+      await _functions.httpsCallable('rescheduleBookingCallable').call({
+        'bookingId': bookingId,
+        'startAt': startAt.toUtc().toIso8601String(),
+        'endAt': endAt.toUtc().toIso8601String(),
+      });
+    } on FirebaseFunctionsException catch (error) {
+      throw BookingServiceException(_callableErrorMessage(error));
+    }
+  }
+
+  Future<String> addFieldMaintenance({
+    required String fieldId,
+    required DateTime startAt,
+    required DateTime endAt,
+    required String reason,
+  }) async {
+    final ownerId = _auth.currentUser?.uid;
+    if (ownerId == null) {
+      throw const BookingServiceException('سجّل الدخول أولاً.');
+    }
+    if (!startAt.isAfter(DateTime.now()) ||
+        !endAt.isAfter(startAt) ||
+        reason.trim().isEmpty ||
+        reason.trim().length > 160) {
+      throw const BookingServiceException('تحقق من بيانات فترة الصيانة.');
+    }
+    final maintenanceId =
+        _firestore.collection('field_maintenance').doc().id;
+    try {
+      await _functions.httpsCallable('manageFieldMaintenance').call({
+        'action': 'add',
+        'fieldId': fieldId,
+        'maintenanceId': maintenanceId,
+        'startAt': startAt.toUtc().toIso8601String(),
+        'endAt': endAt.toUtc().toIso8601String(),
+        'reason': reason.trim(),
+      });
+      return maintenanceId;
+    } on FirebaseFunctionsException catch (error) {
+      throw BookingServiceException(_callableErrorMessage(error));
+    }
+  }
+
+  Future<void> removeFieldMaintenance({
+    required String fieldId,
+    required String maintenanceId,
+  }) async {
+    if (_auth.currentUser == null) {
+      throw const BookingServiceException('سجّل الدخول أولاً.');
+    }
+    try {
+      await _functions.httpsCallable('manageFieldMaintenance').call({
+        'action': 'remove',
+        'fieldId': fieldId,
+        'maintenanceId': maintenanceId,
+      });
+    } on FirebaseFunctionsException catch (error) {
+      throw BookingServiceException(_callableErrorMessage(error));
+    }
+  }
+
+  Stream<QuerySnapshot<Map<String, dynamic>>> watchFieldMaintenance(
+    String ownerId,
+  ) {
+    return _firestore
+        .collection('field_maintenance')
+        .where('ownerId', isEqualTo: ownerId)
+        .snapshots();
+  }
+
+  String _callableErrorMessage(FirebaseFunctionsException error) {
+    final message = error.message;
+    if (message != null && message.trim().isNotEmpty) return message;
+    return switch (error.code) {
+      'unauthenticated' => 'انتهت جلسة الدخول. أعد تسجيل الدخول.',
+      'permission-denied' => 'ليست لديك صلاحية تنفيذ هذا الإجراء.',
+      'not-found' => 'لم يُعثر على الحجز أو فترة الصيانة المطلوبة.',
+      'invalid-argument' => 'البيانات المرسلة غير صالحة.',
+      'already-exists' => 'هذا الموعد يتعارض مع حجز أو فترة صيانة.',
+      'failed-precondition' => 'لا يمكن تنفيذ الإجراء بالحالة الحالية.',
+      'unavailable' => 'الخدمة غير متاحة حالياً. تحقق من اتصالك.',
+      _ => 'تعذر تنفيذ الطلب. يرجى المحاولة مجدداً.',
+    };
   }
 
   List<String> _dayKeys(DateTime startUtc, DateTime endUtc) {

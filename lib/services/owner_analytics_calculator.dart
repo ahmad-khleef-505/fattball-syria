@@ -9,6 +9,9 @@ class OwnerAnalyticsData {
   const OwnerAnalyticsData({
     required this.monthlyRevenue,
     required this.completedBookings,
+    required this.todayBookings,
+    required this.expectedRevenue,
+    required this.ownedFields,
     required this.bookedHours,
     required this.availableHours,
     required this.weeklyEarnings,
@@ -16,6 +19,9 @@ class OwnerAnalyticsData {
 
   final double monthlyRevenue;
   final int completedBookings;
+  final int todayBookings;
+  final double expectedRevenue;
+  final int ownedFields;
   final double bookedHours;
   final double availableHours;
   final List<double> weeklyEarnings;
@@ -63,6 +69,8 @@ class OwnerAnalyticsCalculator {
 
     var monthlyRevenue = 0.0;
     var completedBookings = 0;
+    var todayBookings = 0;
+    var expectedRevenue = 0.0;
     final weeklyEarnings = List<double>.filled(7, 0);
     final fieldById = {for (final field in fields) field.fieldId: field};
     final occupancyIntervals = <String, List<_AnalyticsInterval>>{};
@@ -72,6 +80,18 @@ class OwnerAnalyticsCalculator {
       final end = timezone.TZDateTime.from(booking.endAt, location);
       final startsThisMonth =
           !start.isBefore(monthStart) && !start.isAfter(localNow);
+      final startsToday = start.year == localNow.year &&
+          start.month == localNow.month &&
+          start.day == localNow.day;
+
+      if (startsToday && booking.status != BookingStatus.cancelled) {
+        todayBookings++;
+      }
+
+      if (booking.status == BookingStatus.pending ||
+          booking.status == BookingStatus.confirmed) {
+        if (start.isAfter(localNow)) expectedRevenue += booking.totalPrice;
+      }
 
       if (booking.status == BookingStatus.completed && startsThisMonth) {
         monthlyRevenue += booking.totalPrice;
@@ -138,6 +158,9 @@ class OwnerAnalyticsCalculator {
     return OwnerAnalyticsData(
       monthlyRevenue: monthlyRevenue,
       completedBookings: completedBookings,
+      todayBookings: todayBookings,
+      expectedRevenue: expectedRevenue,
+      ownedFields: fields.length,
       bookedHours: bookedHours,
       availableHours: availableHours,
       weeklyEarnings: List.unmodifiable(weeklyEarnings),

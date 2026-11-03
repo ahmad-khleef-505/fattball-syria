@@ -176,7 +176,10 @@ class _ManageBookingsScreenState extends ConsumerState<ManageBookingsScreen> {
                   ..sort((a, b) => b.startAt.compareTo(a.startAt));
 
                 if (filtered.isEmpty) {
-                  return const Center(child: Text('لا توجد حجوزات مطابقة.'));
+                  return const SportsEmptyState(
+                    title: 'لا توجد حجوزات مطابقة',
+                    message: 'جرّب تغيير كلمات البحث أو حالة الحجز.',
+                  );
                 }
                 return ListView.separated(
                   padding: const EdgeInsets.all(16),

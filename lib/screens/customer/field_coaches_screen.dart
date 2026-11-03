@@ -4,6 +4,7 @@ import 'package:fattball/models/field_model.dart';
 import 'package:fattball/models/user_model.dart';
 import 'package:fattball/providers/auth_provider.dart';
 import 'package:fattball/screens/customer/booking_screen.dart';
+import 'package:fattball/widgets/sports_loading.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
@@ -58,26 +59,9 @@ class FieldCoachesScreen extends ConsumerWidget {
               }
 
               if (coaches.isEmpty) {
-                return const Center(
-                  child: Padding(
-                    padding: EdgeInsets.all(28),
-                    child: Column(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        Icon(Icons.sports, size: 64),
-                        SizedBox(height: 16),
-                        Text(
-                          'لا تتوفر جلسات تدريب حالياً',
-                          style: TextStyle(fontSize: 20),
-                        ),
-                        SizedBox(height: 8),
-                        Text(
-                          'يمكنك حجز الملعب مباشرة أو العودة لاحقاً.',
-                          textAlign: TextAlign.center,
-                        ),
-                      ],
-                    ),
-                  ),
+                return const SportsEmptyState(
+                  title: 'لا تتوفر جلسات تدريب حالياً',
+                  message: 'يمكنك حجز الملعب مباشرة أو العودة لاحقاً.',
                 );
               }
 

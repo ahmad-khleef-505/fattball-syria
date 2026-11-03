@@ -110,6 +110,7 @@ class _BookingScreenState extends ConsumerState<BookingScreen> {
   Future<void> _submit() async {
     final slot = _selectedSlot;
     if (slot == null) {
+      HapticFeedback.heavyImpact(); // إضافة الاهتزاز عند الخطأ
       _showMessage('اختر الفترة التي تريد حجزها أولاً.');
       return;
     }
@@ -184,6 +185,7 @@ class _BookingScreenState extends ConsumerState<BookingScreen> {
       if (!mounted) return;
       switch (result) {
         case BookingCreated():
+          HapticFeedback.heavyImpact(); // إضافة الاهتزاز عند النجاح
           _showMessage(
             _depositRequired
                 ? 'تم إرسال إثبات العربون. يبقى الحجز بانتظار موافقة صاحب الملعب.'
@@ -656,7 +658,12 @@ class _BookingScreenState extends ConsumerState<BookingScreen> {
       bottomNavigationBar: SafeArea(
         minimum: const EdgeInsets.all(16),
         child: FilledButton.icon(
-          onPressed: _isSubmitting || _selectedSlot == null ? null : _submit,
+          onPressed: _isSubmitting || _selectedSlot == null
+              ? null
+              : () {
+                  HapticFeedback.lightImpact(); // إضافة الاهتزاز عند الضغط على الزر
+                  _submit();
+                },
           icon: _isSubmitting
               ? const SizedBox(
                   width: 20,

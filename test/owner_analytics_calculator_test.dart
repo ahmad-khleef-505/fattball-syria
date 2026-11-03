@@ -54,6 +54,9 @@ void main() {
 
     expect(result.monthlyRevenue, 40);
     expect(result.completedBookings, 1);
+    expect(result.todayBookings, 2);
+    expect(result.expectedRevenue, 40);
+    expect(result.ownedFields, 1);
     expect(result.weeklyEarnings, [0, 0, 0, 0, 0, 0, 40]);
     expect(result.bookedHours, 4);
     expect(result.availableHours, 360);

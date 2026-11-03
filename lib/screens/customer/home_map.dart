@@ -9,6 +9,7 @@ import 'package:fattball/models/user_model.dart';
 import 'package:fattball/providers/auth_provider.dart';
 import 'package:fattball/screens/customer/field_details.dart';
 import 'package:fattball/screens/customer/my_bookings.dart';
+import 'package:fattball/screens/profile/profile_screen.dart';
 import 'package:fattball/screens/customer/assistant_chat_screen.dart';
 import 'package:fattball/screens/community/community_board_screen.dart';
 import 'package:fattball/screens/tournaments/tournament_screens.dart';
@@ -139,6 +140,72 @@ class _HomeMapState extends ConsumerState<HomeMap>
     );
   }
 
+  void _showFilterSheet(BuildContext outerContext) {
+    String grassType = 'الكل';
+    bool coveredOnly = false;
+    showModalBottomSheet<void>(
+      context: outerContext,
+      isScrollControlled: true,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
+      ),
+      builder: (sheetContext) {
+        return StatefulBuilder(
+          builder: (context, setSheetState) {
+            return Padding(
+              padding: const EdgeInsets.all(20),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    'تصفية الملاعب',
+                    style: Theme.of(context).textTheme.titleLarge,
+                  ),
+                  const SizedBox(height: 16),
+                  Text('نوع العشب', style: Theme.of(context).textTheme.titleSmall),
+                  const SizedBox(height: 8),
+                  Wrap(
+                    spacing: 8,
+                    children: ['الكل', 'صناعي', 'طبيعي'].map((label) {
+                      return ChoiceChip(
+                        label: Text(label),
+                        selected: grassType == label,
+                        onSelected: (_) => setSheetState(() => grassType = label),
+                      );
+                    }).toList(),
+                  ),
+                  const SizedBox(height: 16),
+                  SwitchListTile(
+                    title: const Text('ملاعب مغطاة فقط'),
+                    value: coveredOnly,
+                    onChanged: (value) =>
+                        setSheetState(() => coveredOnly = value),
+                  ),
+                  const SizedBox(height: 16),
+                  SizedBox(
+                    width: double.infinity,
+                    child: FilledButton(
+                      onPressed: () {
+                        Navigator.of(sheetContext).pop();
+                        ScaffoldMessenger.of(outerContext).showSnackBar(
+                          glassSnackBar(
+                            content: const Text('تم تطبيق الفلاتر'),
+                          ),
+                        );
+                      },
+                      child: const Text('تطبيق الفلاتر'),
+                    ),
+                  ),
+                ],
+              ),
+            );
+          },
+        );
+      },
+    );
+  }
+
   Future<void> _signOut() async {
     try {
       await ref.read(authServiceProvider).signOut();
@@ -219,6 +286,10 @@ class _HomeMapState extends ConsumerState<HomeMap>
           label: 'المجتمع',
           icon: Icons.forum_outlined,
         ),
+        ResponsiveDestination(
+          label: 'حسابي',
+          icon: Icons.person_outline,
+        ),
       ],
       selectedIndex: 0,
       constrainBody: false,
@@ -239,6 +310,12 @@ class _HomeMapState extends ConsumerState<HomeMap>
           Navigator.of(context).push(
             MaterialPageRoute<void>(
               builder: (_) => CommunityBoardScreen(user: widget.user),
+            ),
+          );
+        } else if (index == 4) {
+          Navigator.of(context).push(
+            MaterialPageRoute<void>(
+              builder: (_) => ProfileScreen(user: widget.user),
             ),
           );
         }

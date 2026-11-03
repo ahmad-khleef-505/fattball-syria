@@ -652,6 +652,20 @@ service cloud.firestore {
         || (signedIn() && resource.data.ownerId == request.auth.uid);
     }
 
+    match /field_maintenance/{maintenanceId} {
+      allow read: if isSuperAdmin()
+        || (
+          signedIn()
+          && resource.data.ownerId == request.auth.uid
+          && get(fieldPath(resource.data.fieldId)).data.ownerId
+            == request.auth.uid
+        );
+
+      // Maintenance blocks and their booking locks are written by trusted
+      // callable functions so clients cannot bypass overlap validation.
+      allow create, update, delete: if false;
+    }
+
     match /tournaments/{tournamentId} {
       allow read: if isSuperAdmin()
         || (

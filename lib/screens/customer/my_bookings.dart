@@ -1,3 +1,4 @@
+import 'package:add_2_calendar/add_2_calendar.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:fattball/core/constants.dart';
 import 'package:fattball/models/booking_model.dart';
@@ -198,7 +199,10 @@ class _BookingCard extends StatelessWidget {
         .doc(booking.fieldId)
         .get();
 
-    return BookingTicket(
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        BookingTicket(
       title: FutureBuilder<DocumentSnapshot<Map<String, dynamic>>>(
         future: fieldFuture,
         builder: (context, snapshot) {
@@ -239,6 +243,26 @@ class _BookingCard extends StatelessWidget {
           : 'جلسة تدريب مع ${booking.coachName ?? 'المدرب'} '
               'للطفل ${booking.trainingChildName ?? ''}'
               '${booking.trainingChildAge == null ? '' : ' (${booking.trainingChildAge} سنة)'}',
+    ),
+        const SizedBox(height: 8),
+        Align(
+          alignment: AlignmentDirectional.centerEnd,
+          child: OutlinedButton.icon(
+            icon: const Icon(Icons.calendar_month, size: 18),
+            label: const Text('أضف إلى تقويمي'),
+            onPressed: () {
+              final Event event = Event(
+                title: 'مباراة في ملعب ${booking.fieldId}',
+                description: 'تم الحجز عبر تطبيق Fattball',
+                location: 'سوريا',
+                startDate: booking.startAt,
+                endDate: booking.endAt,
+              );
+              Add2Calendar.addEvent2Cal(event);
+            },
+          ),
+        ),
+      ],
     );
   }
 }

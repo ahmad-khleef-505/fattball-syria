@@ -1,4 +1,9 @@
+import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:firebase_auth/firebase_auth.dart';
+import 'package:fattball/models/user_model.dart';
 import 'package:fattball/providers/auth_provider.dart';
+import 'package:fattball/screens/customer/home_map.dart';
+import 'package:fattball/screens/owner/owner_dashboard.dart';
 import 'package:fattball/services/auth_service.dart';
 import 'package:fattball/widgets/glass_snack_bar.dart';
 import 'package:flutter/material.dart';
@@ -46,6 +51,32 @@ class _RegisterScreenState extends ConsumerState<RegisterScreen> {
             role: _role,
             phone: _phoneController.text,
           );
+      if (!mounted) return;
+      final firebaseUser = FirebaseAuth.instance.currentUser;
+      if (firebaseUser != null) {
+        final snapshot = await FirebaseFirestore.instance
+            .collection('users')
+            .doc(firebaseUser.uid)
+            .get();
+        final data = snapshot.data();
+        if (data != null && mounted) {
+          final userModel = UserModel.fromMap(firebaseUser.uid, data);
+          if (userModel.role == 'owner') {
+            Navigator.of(context).pushReplacement(
+              MaterialPageRoute<void>(
+                builder: (_) => OwnerDashboard(user: userModel),
+              ),
+            );
+          } else {
+            Navigator.of(context).pushReplacement(
+              MaterialPageRoute<void>(
+                builder: (_) => HomeMap(user: userModel),
+              ),
+            );
+          }
+          return;
+        }
+      }
     } on AuthServiceException catch (error) {
       if (mounted) _showMessage(error.message);
     } finally {

@@ -1,10 +1,12 @@
 import 'package:fattball/models/admin_log_model.dart';
 import 'package:fattball/models/user_model.dart';
 import 'package:fattball/providers/auth_provider.dart';
+import 'package:fattball/screens/profile/profile_screen.dart';
 import 'package:fattball/screens/admin/manage_bookings.dart';
 import 'package:fattball/screens/admin/manage_owners.dart';
 import 'package:fattball/services/auth_service.dart';
 import 'package:fattball/widgets/responsive_scaffold.dart';
+import 'package:fattball/widgets/sports_loading.dart';
 import 'package:fattball/widgets/glass_snack_bar.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -112,6 +114,10 @@ class _AdminDashboardState extends ConsumerState<AdminDashboard> {
               label: 'الحجوزات',
               icon: Icons.event_note_outlined,
             ),
+            ResponsiveDestination(
+              label: 'حسابي',
+              icon: Icons.person_outline,
+            ),
           ],
           selectedIndex: 0,
           onDestinationSelected: (index) {
@@ -127,14 +133,20 @@ class _AdminDashboardState extends ConsumerState<AdminDashboard> {
                   builder: (_) => const ManageBookingsScreen(),
                 ),
               );
+            } else if (index == 3) {
+              Navigator.of(context).push(
+                MaterialPageRoute<void>(
+                  builder: (_) => ProfileScreen(user: widget.admin),
+                ),
+              );
             }
           },
           actions: [
-              IconButton(
-                tooltip: 'تسجيل الخروج',
-                onPressed: _signOut,
-                icon: const Icon(Icons.logout),
-              ),
+            IconButton(
+              tooltip: 'تسجيل الخروج',
+              onPressed: _signOut,
+              icon: const Icon(Icons.logout),
+            ),
           ],
           body: ListView(
             padding: const EdgeInsets.all(16),
@@ -182,9 +194,8 @@ class _AdminDashboardState extends ConsumerState<AdminDashboard> {
               ),
               const SizedBox(height: 8),
               StreamBuilder(
-                stream: ref
-                    .read(adminServiceProvider)
-                    .watchAdminLogs(limit: 100),
+                stream:
+                    ref.read(adminServiceProvider).watchAdminLogs(limit: 100),
                 builder: (context, snapshot) {
                   if (snapshot.hasError) {
                     return const Card(
@@ -203,11 +214,9 @@ class _AdminDashboardState extends ConsumerState<AdminDashboard> {
 
                   final documents = snapshot.data ?? [];
                   if (documents.isEmpty) {
-                    return const Card(
-                      child: Padding(
-                        padding: EdgeInsets.all(16),
-                        child: Text('لا توجد عمليات إدارية مسجلة.'),
-                      ),
+                    return const SportsEmptyState(
+                      title: 'لا توجد عمليات إدارية مسجلة',
+                      message: 'ستظهر هنا العمليات الإدارية عند تنفيذها.',
                     );
                   }
 

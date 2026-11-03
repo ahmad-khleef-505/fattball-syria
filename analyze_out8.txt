@@ -1,0 +1,30 @@
+﻿Analyzing fattball...                                           
+
+   info - 'value' is deprecated and shouldn't be used. Use initialValue instead. This will set the initial value for the form field. This feature was deprecated after v3.33.0-1.0.pre. Try replacing the use of the deprecated member with the replacement - lib\screens\admin\activate_subscription.dart:95:15 - deprecated_member_use
+  error - Undefined name '_rememberMe'. Try correcting the name to one that is defined, or defining the name - lib\screens\auth\login_screen.dart:30:35 - undefined_identifier
+  error - The name 'initState' is already defined. Try renaming one of the declarations - lib\screens\auth\login_screen.dart:35:8 - duplicate_definition
+  error - Undefined name '_rememberMe'. Try correcting the name to one that is defined, or defining the name - lib\screens\auth\login_screen.dart:38:35 - undefined_identifier
+  error - Undefined name '_rememberMe'. Try correcting the name to one that is defined, or defining the name - lib\screens\auth\login_screen.dart:59:11 - undefined_identifier
+   info - 'value' is deprecated and shouldn't be used. Use initialValue instead. This will set the initial value for the form field. This feature was deprecated after v3.33.0-1.0.pre. Try replacing the use of the deprecated member with the replacement - lib\screens\auth\register_screen.dart:146:21 - deprecated_member_use
+   info - 'value' is deprecated and shouldn't be used. Use initialValue instead. This will set the initial value for the form field. This feature was deprecated after v3.33.0-1.0.pre. Try replacing the use of the deprecated member with the replacement - lib\screens\community\community_board_screen.dart:268:17 - deprecated_member_use
+   info - 'value' is deprecated and shouldn't be used. Use initialValue instead. This will set the initial value for the form field. This feature was deprecated after v3.33.0-1.0.pre. Try replacing the use of the deprecated member with the replacement - lib\screens\community\community_board_screen.dart:354:23 - deprecated_member_use
+   info - 'value' is deprecated and shouldn't be used. Use initialValue instead. This will set the initial value for the form field. This feature was deprecated after v3.33.0-1.0.pre. Try replacing the use of the deprecated member with the replacement - lib\screens\customer\booking_screen.dart:568:35 - deprecated_member_use
+   info - 'Share' is deprecated and shouldn't be used. Use SharePlus instead. Try replacing the use of the deprecated member with the replacement - lib\screens\customer\field_details.dart:89:13 - deprecated_member_use
+   info - 'share' is deprecated and shouldn't be used. Use SharePlus.instance.share() instead. Try replacing the use of the deprecated member with the replacement - lib\screens\customer\field_details.dart:89:19 - deprecated_member_use
+warning - The declaration '_showFilterSheet' isn't referenced. Try removing the declaration of '_showFilterSheet' - lib\screens\customer\home_map.dart:143:8 - unused_element
+   info - 'value' is deprecated and shouldn't be used. Use initialValue instead. This will set the initial value for the form field. This feature was deprecated after v3.33.0-1.0.pre. Try replacing the use of the deprecated member with the replacement - lib\screens\customer\home_map.dart:590:7 - deprecated_member_use
+   info - 'value' is deprecated and shouldn't be used. Use initialValue instead. This will set the initial value for the form field. This feature was deprecated after v3.33.0-1.0.pre. Try replacing the use of the deprecated member with the replacement - lib\screens\customer\home_map.dart:628:7 - deprecated_member_use
+   info - 'value' is deprecated and shouldn't be used. Use initialValue instead. This will set the initial value for the form field. This feature was deprecated after v3.33.0-1.0.pre. Try replacing the use of the deprecated member with the replacement - lib\screens\owner\field_form.dart:434:27 - deprecated_member_use
+   info - 'value' is deprecated and shouldn't be used. Use initialValue instead. This will set the initial value for the form field. This feature was deprecated after v3.33.0-1.0.pre. Try replacing the use of the deprecated member with the replacement - lib\screens\owner\field_form.dart:466:27 - deprecated_member_use
+   info - Missing a required trailing comma. Try adding a trailing comma - lib\screens\owner\owner_bookings.dart:340:24 - require_trailing_commas
+   info - 'value' is deprecated and shouldn't be used. Use initialValue instead. This will set the initial value for the form field. This feature was deprecated after v3.33.0-1.0.pre. Try replacing the use of the deprecated member with the replacement - lib\screens\owner\subscription_screen.dart:87:19 - deprecated_member_use
+   info - 'value' is deprecated and shouldn't be used. Use initialValue instead. This will set the initial value for the form field. This feature was deprecated after v3.33.0-1.0.pre. Try replacing the use of the deprecated member with the replacement - lib\screens\tournaments\tournament_screens.dart:328:17 - deprecated_member_use
+   info - 'value' is deprecated and shouldn't be used. Use initialValue instead. This will set the initial value for the form field. This feature was deprecated after v3.33.0-1.0.pre. Try replacing the use of the deprecated member with the replacement - lib\screens\tournaments\tournament_screens.dart:814:19 - deprecated_member_use
+
+flutter : 20 issues found. (ran in 7.5s)
+At line:1 char:44
++ ...  "e:\Ahmad Al-Khleef Projects\fattball"; flutter analyze 2>&1 | Out-F ...
++                                              ~~~~~~~~~~~~~~~~~~~~
+    + CategoryInfo          : NotSpecified: (20 issues found. (ran in 7.5s):String) [], RemoteException
+    + FullyQualifiedErrorId : NativeCommandError
+ 

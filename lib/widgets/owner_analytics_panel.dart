@@ -158,6 +158,34 @@ class _AnalyticsContent extends StatelessWidget {
                     SizedBox(
                       width: itemWidth,
                       child: _AnalyticsMetric(
+                        label: 'حجوزات اليوم',
+                        value: '${analytics.todayBookings}',
+                        icon: Icons.today_outlined,
+                        color: Theme.of(context).colorScheme.primary,
+                      ),
+                    ),
+                    SizedBox(
+                      width: itemWidth,
+                      child: _AnalyticsMetric(
+                        label: 'إيرادات الحجوزات القادمة',
+                        value:
+                            '${analytics.expectedRevenue.toStringAsFixed(2)} \$',
+                        icon: Icons.trending_up_outlined,
+                        color: AppTheme.sportsOrange,
+                      ),
+                    ),
+                    SizedBox(
+                      width: itemWidth,
+                      child: _AnalyticsMetric(
+                        label: 'الملاعب المملوكة',
+                        value: '${analytics.ownedFields}',
+                        icon: Icons.stadium_outlined,
+                        color: AppTheme.neonGreen,
+                      ),
+                    ),
+                    SizedBox(
+                      width: itemWidth,
+                      child: _AnalyticsMetric(
                         label: 'الأرباح المكتملة',
                         value:
                             '${analytics.monthlyRevenue.toStringAsFixed(2)} \$',

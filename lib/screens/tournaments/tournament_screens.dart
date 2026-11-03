@@ -8,6 +8,7 @@ import 'package:fattball/providers/auth_provider.dart';
 import 'package:fattball/services/tournament_service.dart';
 import 'package:fattball/widgets/glass_snack_bar.dart';
 import 'package:fattball/widgets/responsive_scaffold.dart';
+import 'package:fattball/widgets/sports_loading.dart';
 import 'package:firebase_storage/firebase_storage.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -104,7 +105,10 @@ class OwnerTournamentsScreen extends ConsumerWidget {
             }
           }
           if (items.isEmpty) {
-            return const Center(child: Text('لم تنشئ أي بطولة بعد.'));
+            return const SportsEmptyState(
+              title: 'لم تنشئ أي بطولة بعد',
+              message: 'أنشئ بطولة جديدة ليتمكن اللاعبون من تسجيل فرقهم.',
+            );
           }
           return ListView.separated(
             padding: const EdgeInsets.all(16),
@@ -163,11 +167,9 @@ class TournamentListScreen extends ConsumerWidget {
             }
           }
           if (items.isEmpty) {
-            return const Center(
-              child: Padding(
-                padding: EdgeInsets.all(24),
-                child: Text('لا توجد بطولات مفتوحة أو جداول منشورة حالياً.'),
-              ),
+            return const SportsEmptyState(
+              title: 'لا توجد بطولات متاحة حالياً',
+              message: 'تحقق لاحقاً من البطولات الجديدة وجداول المباريات.',
             );
           }
           return LayoutBuilder(
@@ -888,15 +890,38 @@ class _RegisterTeamCardState extends ConsumerState<_RegisterTeamCard> {
   }
 }
 
-class _OwnerTeamsPanel extends ConsumerWidget {
+class _OwnerTeamsPanel extends ConsumerStatefulWidget {
   const _OwnerTeamsPanel({required this.tournament});
   final TournamentModel tournament;
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
+  ConsumerState<_OwnerTeamsPanel> createState() => _OwnerTeamsPanelState();
+}
+
+class _OwnerTeamsPanelState extends ConsumerState<_OwnerTeamsPanel> {
+  final Set<String> _reviewingTeamIds = {};
+
+  Future<void> _reviewPayment(String teamId, {required bool approved}) async {
+    if (_reviewingTeamIds.contains(teamId)) return;
+    setState(() => _reviewingTeamIds.add(teamId));
+    try {
+      await ref.read(tournamentServiceProvider).reviewPayment(
+            tournamentId: widget.tournament.id,
+            teamId: teamId,
+            approved: approved,
+          );
+    } on FirebaseException {
+      if (mounted) _showError(context);
+    } finally {
+      if (mounted) setState(() => _reviewingTeamIds.remove(teamId));
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
     final service = ref.watch(tournamentServiceProvider);
     return StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
-      stream: service.watchTeams(tournament.id),
+      stream: service.watchTeams(widget.tournament.id),
       builder: (context, snapshot) {
         if (snapshot.hasError) {
           return const Card(child: ListTile(title: Text('تعذر تحميل الفرق.')));
@@ -909,8 +934,9 @@ class _OwnerTeamsPanel extends ConsumerWidget {
             .toList();
         return Card(
           child: ExpansionTile(
-            title:
-                Text('الفرق المسجلة (${teams.length}/${tournament.maxTeams})'),
+            title: Text(
+              'الفرق المسجلة (${teams.length}/${widget.tournament.maxTeams})',
+            ),
             children: [
               if (teams.isEmpty)
                 const ListTile(title: Text('لا توجد طلبات تسجيل بعد.')),
@@ -939,33 +965,37 @@ class _OwnerTeamsPanel extends ConsumerWidget {
                               ),
                             IconButton(
                               tooltip: 'اعتماد الرسوم',
-                              onPressed: () async {
-                                try {
-                                  await service.reviewPayment(
-                                    tournamentId: tournament.id,
-                                    teamId: team.id,
-                                    approved: true,
-                                  );
-                                } on FirebaseException {
-                                  if (context.mounted) _showError(context);
-                                }
-                              },
-                              icon: const Icon(Icons.check_circle_outline),
+                              onPressed: _reviewingTeamIds.contains(team.id)
+                                  ? null
+                                  : () => _reviewPayment(
+                                        team.id,
+                                        approved: true,
+                                      ),
+                              icon: _reviewingTeamIds.contains(team.id)
+                                  ? const SizedBox.square(
+                                      dimension: 18,
+                                      child: CircularProgressIndicator(
+                                        strokeWidth: 2,
+                                      ),
+                                    )
+                                  : const Icon(Icons.check_circle_outline),
                             ),
                             IconButton(
                               tooltip: 'رفض الإثبات',
-                              onPressed: () async {
-                                try {
-                                  await service.reviewPayment(
-                                    tournamentId: tournament.id,
-                                    teamId: team.id,
-                                    approved: false,
-                                  );
-                                } on FirebaseException {
-                                  if (context.mounted) _showError(context);
-                                }
-                              },
-                              icon: const Icon(Icons.cancel_outlined),
+                              onPressed: _reviewingTeamIds.contains(team.id)
+                                  ? null
+                                  : () => _reviewPayment(
+                                        team.id,
+                                        approved: false,
+                                      ),
+                              icon: _reviewingTeamIds.contains(team.id)
+                                  ? const SizedBox.square(
+                                      dimension: 18,
+                                      child: CircularProgressIndicator(
+                                        strokeWidth: 2,
+                                      ),
+                                    )
+                                  : const Icon(Icons.cancel_outlined),
                             ),
                           ],
                         )
@@ -1073,7 +1103,6 @@ class _TournamentHeader extends StatelessWidget {
 
   String _state(String status) =>
       status == 'registration' ? 'التسجيل مفتوح' : 'الجدول منشور';
-
 }
 
 class _HeaderFact extends StatelessWidget {

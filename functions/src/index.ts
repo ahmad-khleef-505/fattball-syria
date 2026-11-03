@@ -189,10 +189,26 @@ function roundCurrency(amount: number): number {
 }
 
 interface Reservation {
-  bookingId: string;
+  bookingId?: string;
+  maintenanceId?: string;
   startAt: Timestamp;
   endAt: Timestamp;
   status: string;
+}
+
+interface RescheduleBookingInput {
+  bookingId?: unknown;
+  startAt?: unknown;
+  endAt?: unknown;
+}
+
+interface FieldMaintenanceInput {
+  action?: unknown;
+  fieldId?: unknown;
+  maintenanceId?: unknown;
+  startAt?: unknown;
+  endAt?: unknown;
+  reason?: unknown;
 }
 
 function parseDate(value: unknown, name: string): Date {
@@ -264,14 +280,49 @@ function validateReservation(
   }
   const reservation = value as Partial<Reservation>;
   if (
-    typeof reservation.bookingId !== "string" ||
     !(reservation.startAt instanceof Timestamp) ||
     !(reservation.endAt instanceof Timestamp) ||
-    typeof reservation.status !== "string"
+    typeof reservation.status !== "string" ||
+    (reservation.status === "maintenance" ?
+      typeof reservation.maintenanceId !== "string" :
+      typeof reservation.bookingId !== "string")
   ) {
     throw new HttpsError("internal", "بيانات قفل المواعيد غير مكتملة.");
   }
   return reservation as Reservation;
+}
+
+function ownerHasActiveSubscription(data: DocumentData | undefined): boolean {
+  return !!data &&
+    data.role === "owner" &&
+    data.isActive === true &&
+    data.subscriptionExpiry instanceof Timestamp &&
+    data.subscriptionExpiry.toDate() > new Date();
+}
+
+function requireOwnerRequest(request: {
+  auth?: {uid: string} | null;
+}): string {
+  if (!request.auth) {
+    throw new HttpsError("unauthenticated", "سجّل الدخول أولاً.");
+  }
+  return request.auth.uid;
+}
+
+function requireId(value: unknown, label: string): string {
+  if (
+    typeof value !== "string" ||
+    !/^[A-Za-z0-9_-]{1,120}$/.test(value)
+  ) {
+    throw new HttpsError("invalid-argument", `${label} غير صالح.`);
+  }
+  return value;
+}
+
+function lockReferences(fieldId: string, startAt: Date, endAt: Date) {
+  return dayKeysBetween(startAt, endAt).map((dayKey) =>
+    db.collection("booking_locks").doc(`${fieldId}_${dayKey}`),
+  );
 }
 
 function requireTimestamp(
@@ -573,6 +624,351 @@ export const createBookingCallable = onCall<CreateBookingInput>(
         "تعذر إنشاء الحجز. يرجى المحاولة مجدداً.",
       );
     }
+  },
+);
+
+export const rescheduleBookingCallable = onCall<RescheduleBookingInput>(
+  {region: "me-central1"},
+  async (request) => {
+    const ownerId = requireOwnerRequest(request);
+    const bookingId = requireId(request.data.bookingId, "معرّف الحجز");
+    const startAt = parseDate(request.data.startAt, "وقت البداية");
+    const endAt = parseDate(request.data.endAt, "وقت النهاية");
+    const now = new Date();
+    if (startAt <= now || endAt <= startAt) {
+      throw new HttpsError("invalid-argument", "الفترة الجديدة غير صالحة.");
+    }
+
+    const bookingRef = db.collection("bookings").doc(bookingId);
+    const bookingSnapshot = await bookingRef.get();
+    const bookingData = bookingSnapshot.data();
+    if (!bookingData || bookingData.ownerId !== ownerId) {
+      throw new HttpsError("permission-denied", "هذا الحجز لا يتبع حسابك.");
+    }
+    if (
+      bookingData.status !== "pending" &&
+      bookingData.status !== "confirmed"
+    ) {
+      throw new HttpsError(
+        "failed-precondition",
+        "لا يمكن إعادة جدولة هذا الحجز بحالته الحالية.",
+      );
+    }
+    if (
+      !(bookingData.startAt instanceof Timestamp) ||
+      !(bookingData.endAt instanceof Timestamp) ||
+      bookingData.startAt.toDate() <= now
+    ) {
+      throw new HttpsError(
+        "failed-precondition",
+        "لا يمكن تغيير موعد حجز بدأ أو انتهى.",
+      );
+    }
+    if (
+      endAt.getTime() - startAt.getTime() !==
+      bookingData.endAt.toMillis() - bookingData.startAt.toMillis()
+    ) {
+      throw new HttpsError(
+        "invalid-argument",
+        "يجب الحفاظ على مدة الحجز الأصلية عند تغيير الموعد.",
+      );
+    }
+
+    const fieldId = requireId(bookingData.fieldId, "معرّف الملعب");
+    const fieldRef = db.collection("fields").doc(fieldId);
+    const ownerRef = db.collection("users").doc(ownerId);
+    const oldStart = bookingData.startAt.toDate();
+    const oldEnd = bookingData.endAt.toDate();
+    const oldRefs = lockReferences(fieldId, oldStart, oldEnd);
+    const newRefs = lockReferences(fieldId, startAt, endAt);
+    const refsByPath = new Map(
+      [...oldRefs, ...newRefs].map((reference) => [reference.path, reference]),
+    );
+    const lockRefs = [...refsByPath.values()];
+    const bookingUpdate = {
+      startAt: Timestamp.fromDate(startAt),
+      endAt: Timestamp.fromDate(endAt),
+    };
+
+    try {
+      await db.runTransaction(async (transaction) => {
+        const [currentBooking, fieldSnapshot, ownerSnapshot, lockSnapshots] =
+          await Promise.all([
+          transaction.get(bookingRef),
+          transaction.get(fieldRef),
+          transaction.get(ownerRef),
+          Promise.all(lockRefs.map((reference) => transaction.get(reference))),
+        ]);
+        const current = currentBooking.data();
+        const fieldData = fieldSnapshot.data();
+        if (
+          !fieldData ||
+          fieldData.ownerId !== ownerId ||
+          !ownerHasActiveSubscription(ownerSnapshot.data())
+        ) {
+          throw new HttpsError(
+            "permission-denied",
+            "الملعب غير مرتبط بحساب مالك فعّال.",
+          );
+        }
+        if (
+          !current ||
+          current.ownerId !== ownerId ||
+          current.fieldId !== fieldId ||
+          current.status !== bookingData.status ||
+          !(current.startAt instanceof Timestamp) ||
+          !(current.endAt instanceof Timestamp) ||
+          current.startAt.toMillis() !== bookingData.startAt.toMillis() ||
+          current.endAt.toMillis() !== bookingData.endAt.toMillis()
+        ) {
+          throw new HttpsError(
+            "aborted",
+            "تغيرت بيانات الحجز. حدّث الصفحة ثم حاول مجدداً.",
+          );
+        }
+
+        const lockByPath = new Map(
+          lockRefs.map((reference, index) => [
+            reference.path,
+            lockSnapshots[index],
+          ]),
+        );
+        for (const reference of newRefs) {
+          const reservations =
+            lockByPath.get(reference.path)?.data()?.reservations;
+          if (reservations === undefined) continue;
+          if (typeof reservations !== "object" || reservations === null) {
+            throw new HttpsError("internal", "بيانات قفل المواعيد غير صالحة.");
+          }
+          for (const [reservationId, raw] of Object.entries(reservations)) {
+            if (reservationId === bookingId) continue;
+            const reservation = validateReservation(raw);
+            if (
+              reservation.status !== "cancelled" &&
+              overlaps(reservation.startAt, reservation.endAt, startAt, endAt)
+            ) {
+              throw new HttpsError("already-exists", overlapMessage);
+            }
+          }
+        }
+
+        const newPathSet = new Set(newRefs.map((reference) => reference.path));
+        transaction.update(bookingRef, bookingUpdate);
+        for (const reference of lockRefs) {
+          const lockSnapshot = lockByPath.get(reference.path)!;
+          const rawReservations = lockSnapshot.data()?.reservations;
+          const reservations: Record<string, unknown> = rawReservations ?
+            {...rawReservations as Record<string, unknown>} :
+            {};
+          if (newPathSet.has(reference.path)) {
+            reservations[bookingId] = {
+              bookingId,
+              startAt: bookingUpdate.startAt,
+              endAt: bookingUpdate.endAt,
+              status: current.status,
+            };
+          } else {
+            delete reservations[bookingId];
+          }
+          transaction.set(reference, {
+            fieldId,
+            ownerId,
+            bookingId,
+            reservations,
+          }, {merge: true});
+        }
+      });
+    } catch (error) {
+      if (error instanceof HttpsError) throw error;
+      logger.error("rescheduleBookingCallable failed", {bookingId, ownerId, error});
+      throw new HttpsError(
+        "internal",
+        "تعذرت إعادة جدولة الحجز. يرجى المحاولة مجدداً.",
+      );
+    }
+
+    return {bookingId, startAt: startAt.toISOString(), endAt: endAt.toISOString()};
+  },
+);
+
+export const manageFieldMaintenance = onCall<FieldMaintenanceInput>(
+  {region: "me-central1"},
+  async (request) => {
+    const ownerId = requireOwnerRequest(request);
+    const action = request.data.action;
+    const fieldId = requireId(request.data.fieldId, "معرّف الملعب");
+    const maintenanceId = requireId(
+      request.data.maintenanceId,
+      "معرّف فترة الصيانة",
+    );
+    if (action !== "add" && action !== "remove") {
+      throw new HttpsError("invalid-argument", "نوع عملية الصيانة غير صالح.");
+    }
+
+    const maintenanceRef = db.collection("field_maintenance").doc(maintenanceId);
+    const fieldRef = db.collection("fields").doc(fieldId);
+    const ownerRef = db.collection("users").doc(ownerId);
+
+    if (action === "remove") {
+      try {
+        await db.runTransaction(async (transaction) => {
+          const [maintenanceSnapshot, fieldSnapshot, ownerSnapshot] =
+            await Promise.all([
+              transaction.get(maintenanceRef),
+              transaction.get(fieldRef),
+              transaction.get(ownerRef),
+            ]);
+          const maintenance = maintenanceSnapshot.data();
+          if (!maintenance || maintenance.ownerId !== ownerId) {
+            throw new HttpsError("not-found", "فترة الصيانة غير موجودة.");
+          }
+          if (
+            fieldSnapshot.data()?.ownerId !== ownerId ||
+            !ownerHasActiveSubscription(ownerSnapshot.data())
+          ) {
+            throw new HttpsError("permission-denied", "لا تملك صلاحية إدارة الصيانة.");
+          }
+          if (
+            !(maintenance.startAt instanceof Timestamp) ||
+            !(maintenance.endAt instanceof Timestamp)
+          ) {
+            throw new HttpsError("internal", "بيانات فترة الصيانة غير صالحة.");
+          }
+          const lockRefs = lockReferences(
+            fieldId,
+            maintenance.startAt.toDate(),
+            maintenance.endAt.toDate(),
+          );
+          const lockSnapshots = await Promise.all(
+            lockRefs.map((reference) => transaction.get(reference)),
+          );
+          for (let index = 0; index < lockRefs.length; index++) {
+            const raw = lockSnapshots[index].data()?.reservations;
+            if (typeof raw !== "object" || raw === null) continue;
+            const reservations = {...raw as Record<string, unknown>};
+            delete reservations[`maintenance_${maintenanceId}`];
+            transaction.set(lockRefs[index], {reservations}, {merge: true});
+          }
+          transaction.delete(maintenanceRef);
+        });
+      } catch (error) {
+        if (error instanceof HttpsError) throw error;
+        logger.error("manageFieldMaintenance remove failed", {
+          fieldId,
+          maintenanceId,
+          ownerId,
+          error,
+        });
+        throw new HttpsError("internal", "تعذر إلغاء فترة الصيانة.");
+      }
+      return {maintenanceId, removed: true};
+    }
+
+    const startAt = parseDate(request.data.startAt, "بداية الصيانة");
+    const endAt = parseDate(request.data.endAt, "نهاية الصيانة");
+    if (startAt <= new Date() || endAt <= startAt) {
+      throw new HttpsError("invalid-argument", "فترة الصيانة غير صالحة.");
+    }
+    const reason = request.data.reason;
+    if (
+      typeof reason !== "string" ||
+      reason.trim().length === 0 ||
+      reason.trim().length > 160
+    ) {
+      throw new HttpsError("invalid-argument", "أدخل وصفاً مختصراً للصيانة.");
+    }
+
+    const lockRefs = lockReferences(fieldId, startAt, endAt);
+    const overlapQuery = db.collection("bookings")
+      .where("fieldId", "==", fieldId)
+      .where("status", "in", ["pending", "confirmed", "completed"])
+      .where("startAt", "<", Timestamp.fromDate(endAt))
+      .where("endAt", ">", Timestamp.fromDate(startAt));
+    try {
+      await db.runTransaction(async (transaction) => {
+        const [fieldSnapshot, ownerSnapshot, overlapSnapshot, lockSnapshots] =
+          await Promise.all([
+            transaction.get(fieldRef),
+            transaction.get(ownerRef),
+            transaction.get(overlapQuery),
+            Promise.all(lockRefs.map((reference) => transaction.get(reference))),
+          ]);
+        if (
+          fieldSnapshot.data()?.ownerId !== ownerId ||
+          !ownerHasActiveSubscription(ownerSnapshot.data())
+        ) {
+          throw new HttpsError("permission-denied", "لا تملك صلاحية إدارة الصيانة.");
+        }
+
+        for (const booking of overlapSnapshot.docs) {
+          if (booking.data().status !== "cancelled") {
+            throw new HttpsError(
+              "already-exists",
+              "تتعارض فترة الصيانة مع حجز قائم.",
+            );
+          }
+        }
+        for (const lockSnapshot of lockSnapshots) {
+          const reservations = lockSnapshot.data()?.reservations;
+          if (reservations === undefined) continue;
+          if (typeof reservations !== "object" || reservations === null) {
+            throw new HttpsError("internal", "بيانات قفل المواعيد غير صالحة.");
+          }
+          for (const raw of Object.values(reservations)) {
+            const reservation = validateReservation(raw);
+            if (
+              reservation.status !== "cancelled" &&
+              overlaps(reservation.startAt, reservation.endAt, startAt, endAt)
+            ) {
+              throw new HttpsError(
+                "already-exists",
+                "تتعارض فترة الصيانة مع موعد محجوز أو محظور.",
+              );
+            }
+          }
+        }
+
+        const maintenanceKey = `maintenance_${maintenanceId}`;
+        const maintenanceReservation: Reservation = {
+          maintenanceId,
+          startAt: Timestamp.fromDate(startAt),
+          endAt: Timestamp.fromDate(endAt),
+          status: "maintenance",
+        };
+        transaction.create(maintenanceRef, {
+          fieldId,
+          ownerId,
+          maintenanceId,
+          startAt: maintenanceReservation.startAt,
+          endAt: maintenanceReservation.endAt,
+          reason: reason.trim(),
+          createdAt: Timestamp.now(),
+        });
+        lockRefs.forEach((reference, index) => {
+          const rawReservations = lockSnapshots[index].data()?.reservations;
+          const reservations: Record<string, unknown> = rawReservations ?
+            {...rawReservations as Record<string, unknown>} :
+            {};
+          reservations[maintenanceKey] = maintenanceReservation;
+          transaction.set(reference, {
+            fieldId,
+            ownerId,
+            bookingId: maintenanceKey,
+            reservations,
+          }, {merge: true});
+        });
+      });
+    } catch (error) {
+      if (error instanceof HttpsError) throw error;
+      logger.error("manageFieldMaintenance add failed", {
+        fieldId,
+        maintenanceId,
+        ownerId,
+        error,
+      });
+      throw new HttpsError("internal", "تعذر تسجيل فترة الصيانة.");
+    }
+    return {maintenanceId, added: true};
   },
 );
 
