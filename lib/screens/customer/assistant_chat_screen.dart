@@ -1,5 +1,5 @@
-import 'package:fattball/providers/auth_provider.dart';
-import 'package:fattball/services/assistant_service.dart';
+import 'package:fattball/providers/auth_provider.dart'; // <--- مهم جداً
+import 'package:fattball/services/assistant_service.dart'; // <--- مهم جداً
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
@@ -163,9 +163,7 @@ class _AssistantChatScreenState extends ConsumerState<AssistantChatScreen> {
             ),
             const SizedBox(height: 8),
             Text(
-              'اسألني عن الملاعب والأسعار وطريقة الحجز. '
-              'أعتمد على بيانات الملاعب المنشورة؛ تُعالج رسائلك عبر Gemini، '
-              'ولا يطّلع المساعد على حجوزاتك الخاصة.',
+              'اسألني عن الملاعب والأسعار وطريقة الحجز.',
               textAlign: TextAlign.center,
               style: Theme.of(context).textTheme.bodyLarge?.copyWith(
                     color: colors.onSurfaceVariant,

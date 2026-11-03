@@ -1,59 +1,60 @@
-import 'package:cloud_functions/cloud_functions.dart';
+import 'dart:convert';
+import 'package:http/http.dart' as http;
+
+class AssistantServiceException implements Exception {
+  const AssistantServiceException(this.message);
+  final String message;
+
+  @override
+  String toString() => message;
+}
 
 class AssistantService {
-  AssistantService({FirebaseFunctions? functions})
-      : _functions =
-            functions ?? FirebaseFunctions.instanceFor(region: 'me-central1');
-
-  final FirebaseFunctions _functions;
+  final String _apiKey = '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';
 
   Future<String> ask({
     required String message,
     required List<Map<String, String>> history,
   }) async {
     try {
-      final callable = _functions.httpsCallable(
-        'chatAssistant',
-        options: HttpsCallableOptions(timeout: const Duration(seconds: 35)),
+      final formattedHistory = history.map((msg) {
+        return {
+          "role": msg['role'] == 'model' ? 'assistant' : 'user', 
+          "content": msg['content'] ?? ''
+        };
+      }).toList();
+
+      final response = await http.post(
+        Uri.parse('https://openrouter.ai/api/v1/chat/completions'),
+        headers: {
+          'Authorization': 'Bearer $_apiKey',
+          'Content-Type': 'application/json',
+          'HTTP-Referer': 'https://fattball-syria.web.app',
+          'X-Title': 'Fattball App',
+        },
+        body: jsonEncode({
+          "model": "google/gemini-2.0-flash-exp:free",
+          "messages": [
+            {
+              "role": "system", 
+              "content": "أنت مساعد ذكي لتطبيق 'Fattball' لحجز ملاعب كرة القدم في سوريا. أجب على أسئلة المستخدمين باللغة العربية بأسلوب رياضي وودود ومختصر."
+            },
+            ...formattedHistory,
+            {"role": "user", "content": message}
+          ]
+        }),
       );
-      final response = await callable.call<Map<String, dynamic>>({
-        'message': message.trim(),
-        'history': history,
-      });
-      final answer = response.data['answer'];
-      if (answer is! String || answer.trim().isEmpty) {
-        throw const AssistantServiceException(
-          'وصل رد غير صالح من المساعد. حاول مرة أخرى.',
-        );
+
+      if (response.statusCode == 200) {
+        final data = jsonDecode(utf8.decode(response.bodyBytes));
+        final reply = data['choices'][0]['message']['content'];
+        return reply.toString().trim();
+      } else {
+        throw const AssistantServiceException('عذراً، حدث خطأ في الاتصال بالخادم. يرجى المحاولة لاحقاً.');
       }
-      return answer.trim();
-    } on FirebaseFunctionsException catch (error) {
-      throw AssistantServiceException(
-        error.message?.trim().isNotEmpty == true
-            ? error.message!.trim()
-            : _messageForCode(error.code),
-      );
+    } catch (e) {
+      if (e is AssistantServiceException) rethrow;
+      throw const AssistantServiceException('تعذر جلب الرد. تحقق من اتصالك بالإنترنت.');
     }
   }
-
-  String _messageForCode(String code) {
-    return switch (code) {
-      'unauthenticated' => 'سجّل الدخول لاستخدام المساعد.',
-      'resource-exhausted' => 'وصلت إلى حد الاستخدام اليومي. حاول غداً.',
-      'failed-precondition' => 'المساعد غير مهيأ حالياً. يرجى المحاولة لاحقاً.',
-      'deadline-exceeded' => 'استغرق الرد وقتاً طويلاً. حاول مرة أخرى.',
-      'unavailable' => 'المساعد غير متاح مؤقتاً. تحقق من اتصالك.',
-      'invalid-argument' => 'تعذر فهم الرسالة. أعد صياغتها وحاول مجدداً.',
-      _ => 'تعذر الاتصال بالمساعد. حاول مرة أخرى بعد قليل.',
-    };
-  }
-}
-
-class AssistantServiceException implements Exception {
-  const AssistantServiceException(this.message);
-
-  final String message;
-
-  @override
-  String toString() => message;
 }
