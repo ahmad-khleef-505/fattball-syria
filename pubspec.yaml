@@ -37,6 +37,10 @@ dev_dependencies:
   flutter_lints: ^5.0.0
   flutter_launcher_icons: ^0.14.4
 
+# هذا القسم هو الحل الذي يمنع تعارض vector_math
+dependency_overrides:
+  vector_math: ^2.2.0
+
 flutter:
   uses-material-design: true
   assets:
