@@ -10,8 +10,7 @@ class AssistantServiceException implements Exception {
 }
 
 class AssistantService {
-  final String _apiKey = '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';
-
+final String _apiKey = 'YOUR_API_KEY_HERE';
   Future<String> ask({
     required String message,
     required List<Map<String, String>> history,
