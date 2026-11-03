@@ -27,11 +27,12 @@ class AdminService {
     }
 
     try {
-      final token = await currentUser.getIdTokenResult();
+      // إجبار التحديث (true) لقراءة الصلاحيات مباشرة من السيرفر وليس من الذاكرة
+      final token = await currentUser.getIdTokenResult(true); 
       if (token.claims?['admin'] != true ||
           token.claims?['superadmin'] != true) {
         throw const AdminServiceException(
-          'هذه العملية متاحة لحسابات الإدارة العليا فقط.',
+          'حسابك لا يملك صلاحيات السوبر أدمن. يرجى تسجيل الخروج والدخول مجدداً.',
         );
       }
     } on FirebaseAuthException {
@@ -84,7 +85,6 @@ class AdminService {
         throw const AdminServiceException('لم يتم العثور على حساب صاحب الملعب.');
       }
 
-      // حساب تاريخ الانتهاء (بناءً على الاشتراك الحالي إن وجد)
       final currentExpiry = userSnapshot.data()?['subscriptionExpiry'] as Timestamp?;
       DateTime baseDate = now;
       if (currentExpiry != null && currentExpiry.toDate().isAfter(now)) {
@@ -94,13 +94,11 @@ class AdminService {
 
       final batch = _firestore.batch();
 
-      // 1. تحديث حساب المالك
       batch.update(userRef, {
         'isActive': true,
         'subscriptionExpiry': Timestamp.fromDate(newExpiry),
       });
 
-      // 2. تحديث جميع ملاعب المالك
       final fieldsSnapshot = await _firestore.collection('fields').where('ownerId', isEqualTo: ownerId).get();
       for (var doc in fieldsSnapshot.docs) {
         batch.update(doc.reference, {
@@ -109,7 +107,6 @@ class AdminService {
         });
       }
 
-      // 3. تسجيل العملية في سجل الأدمن
       final logRef = _firestore.collection('admin_logs').doc();
       batch.set(logRef, {
         'adminUid': _auth.currentUser?.uid,
@@ -167,7 +164,6 @@ class AdminService {
         batch.delete(doc.reference);
       }
 
-      // تنفيذ الحذف دفعة واحدة
       await batch.commit();
 
       // 6. تسجيل عملية الحذف
