@@ -118,6 +118,12 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
     setState(() => _isSigningOut = true);
     try {
       await ref.read(authServiceProvider).signOut();
+      
+      // إغلاق جميع الشاشات والعودة للجذر ليتم توجيه المستخدم لصفحة الدخول تلقائياً
+      if (mounted) {
+        Navigator.of(context).popUntil((route) => route.isFirst);
+      }
+      
     } on AuthServiceException catch (error) {
       if (mounted) _showMessage(error.message);
     } finally {
@@ -227,7 +233,6 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
               backgroundColor: Theme.of(context).colorScheme.error,
               foregroundColor: Theme.of(context).colorScheme.onError,
             ),
-            // تم ربط زر تسجيل الخروج بدالة التأكيد
             onPressed: _isSigningOut ? null : _confirmSignOut,
             icon: _isSigningOut
                 ? const SizedBox.square(

@@ -1,5 +1,4 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
-import 'package:cloud_functions/cloud_functions.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 
 class AdminServiceException implements Exception {
@@ -15,15 +14,11 @@ class AdminService {
   AdminService({
     FirebaseAuth? auth,
     FirebaseFirestore? firestore,
-    FirebaseFunctions? functions,
   })  : _auth = auth ?? FirebaseAuth.instance,
-        _firestore = firestore ?? FirebaseFirestore.instance,
-        _functions =
-            functions ?? FirebaseFunctions.instanceFor(region: 'me-central1');
+        _firestore = firestore ?? FirebaseFirestore.instance;
 
   final FirebaseAuth _auth;
   final FirebaseFirestore _firestore;
-  final FirebaseFunctions _functions;
 
   Future<void> _ensureSuperAdmin() async {
     final currentUser = _auth.currentUser;
@@ -76,46 +71,113 @@ class AdminService {
     required int durationDays,
   }) async {
     await _ensureSuperAdmin();
-    if (![30, 60, 90].contains(durationDays)) {
+    if (![30, 60, 90, 180, 365].contains(durationDays)) {
       throw const AdminServiceException('مدة الاشتراك المحددة غير صالحة.');
     }
 
     try {
-      final callable = _functions.httpsCallable('activateOwnerSubscription');
-      final response = await callable.call({
-        'ownerId': ownerId,
-        'durationDays': durationDays,
-      });
-      final result = Map<String, dynamic>.from(response.data as Map);
-      if (result['ownerId'] != ownerId ||
-          result['subscriptionId'] is! String ||
-          result['expiresAt'] is! String) {
-        throw const AdminServiceException(
-          'استجابة تفعيل الاشتراك من الخادم غير مكتملة.',
-        );
+      final now = DateTime.now();
+      final userRef = _firestore.collection('users').doc(ownerId);
+      final userSnapshot = await userRef.get();
+      
+      if (!userSnapshot.exists) {
+        throw const AdminServiceException('لم يتم العثور على حساب صاحب الملعب.');
       }
-      return result;
+
+      // حساب تاريخ الانتهاء (بناءً على الاشتراك الحالي إن وجد)
+      final currentExpiry = userSnapshot.data()?['subscriptionExpiry'] as Timestamp?;
+      DateTime baseDate = now;
+      if (currentExpiry != null && currentExpiry.toDate().isAfter(now)) {
+        baseDate = currentExpiry.toDate();
+      }
+      final newExpiry = baseDate.add(Duration(days: durationDays));
+
+      final batch = _firestore.batch();
+
+      // 1. تحديث حساب المالك
+      batch.update(userRef, {
+        'isActive': true,
+        'subscriptionExpiry': Timestamp.fromDate(newExpiry),
+      });
+
+      // 2. تحديث جميع ملاعب المالك
+      final fieldsSnapshot = await _firestore.collection('fields').where('ownerId', isEqualTo: ownerId).get();
+      for (var doc in fieldsSnapshot.docs) {
+        batch.update(doc.reference, {
+          'isActive': true,
+          'ownerSubscriptionExpiry': Timestamp.fromDate(newExpiry),
+        });
+      }
+
+      // 3. تسجيل العملية في سجل الأدمن
+      final logRef = _firestore.collection('admin_logs').doc();
+      batch.set(logRef, {
+        'adminUid': _auth.currentUser?.uid,
+        'action': 'تفعيل اشتراك يدوي',
+        'targetUid': ownerId,
+        'durationDays': durationDays,
+        'newExpiry': Timestamp.fromDate(newExpiry),
+        'createdAt': Timestamp.fromDate(now),
+      });
+
+      await batch.commit();
+
+      return {
+        'ownerId': ownerId,
+        'subscriptionId': logRef.id,
+        'expiresAt': newExpiry.toIso8601String(),
+      };
+      
     } on AdminServiceException {
       rethrow;
-    } on FirebaseFunctionsException catch (error) {
-      throw AdminServiceException(_callableError(error));
     } on FirebaseException catch (error) {
       throw AdminServiceException(_firestoreError(error.code));
-    } on TypeError {
-      throw const AdminServiceException(
-        'استجابة تفعيل الاشتراك من الخادم غير صالحة.',
-      );
     }
   }
 
   Future<void> deleteOwnerAccount(String ownerId) async {
     await _ensureSuperAdmin();
     try {
-      await _functions.httpsCallable('deleteOwnerAccount').call({
-        'ownerId': ownerId,
+      final batch = _firestore.batch();
+      
+      // 1. حذف حساب المستخدم
+      batch.delete(_firestore.collection('users').doc(ownerId));
+
+      // 2. حذف جميع الملاعب
+      final fields = await _firestore.collection('fields').where('ownerId', isEqualTo: ownerId).get();
+      for (var doc in fields.docs) {
+        batch.delete(doc.reference);
+      }
+
+      // 3. حذف جميع الحجوزات
+      final bookings = await _firestore.collection('bookings').where('ownerId', isEqualTo: ownerId).get();
+      for (var doc in bookings.docs) {
+        batch.delete(doc.reference);
+      }
+
+      // 4. حذف أوقات الصيانة
+      final maintenance = await _firestore.collection('field_maintenance').where('ownerId', isEqualTo: ownerId).get();
+      for (var doc in maintenance.docs) {
+        batch.delete(doc.reference);
+      }
+
+      // 5. حذف أقفال المواعيد
+      final locks = await _firestore.collection('booking_locks').where('ownerId', isEqualTo: ownerId).get();
+      for (var doc in locks.docs) {
+        batch.delete(doc.reference);
+      }
+
+      // تنفيذ الحذف دفعة واحدة
+      await batch.commit();
+
+      // 6. تسجيل عملية الحذف
+      await _firestore.collection('admin_logs').add({
+        'adminUid': _auth.currentUser?.uid,
+        'action': 'حذف حساب صاحب ملعب نهائياً',
+        'targetUid': ownerId,
+        'createdAt': Timestamp.now(),
       });
-    } on FirebaseFunctionsException catch (error) {
-      throw AdminServiceException(_callableError(error));
+
     } on FirebaseException catch (error) {
       throw AdminServiceException(_firestoreError(error.code));
     }
@@ -135,22 +197,6 @@ class AdminService {
     } on FirebaseException catch (error) {
       throw AdminServiceException(_firestoreError(error.code));
     }
-  }
-
-  String _callableError(FirebaseFunctionsException error) {
-    if (error.message != null && error.message!.trim().isNotEmpty) {
-      return error.message!;
-    }
-    return switch (error.code) {
-      'unauthenticated' => 'انتهت جلسة الدخول. أعد تسجيل الدخول.',
-      'permission-denied' => 'ليست لديك صلاحية تنفيذ هذا الإجراء.',
-      'not-found' => 'لم يُعثر على الحساب المطلوب.',
-      'invalid-argument' => 'البيانات المرسلة غير صالحة.',
-      'resource-exhausted' => 'تجاوزت العملية الحد المسموح به من البيانات.',
-      'unavailable' => 'الخدمة غير متاحة حالياً. تحقق من اتصالك.',
-      'internal' => 'تعذر إكمال العملية. تحقق من سجل الإدارة.',
-      _ => 'تعذر تنفيذ طلب الإدارة. يرجى المحاولة مجدداً.',
-    };
   }
 
   String _firestoreError(String code) {

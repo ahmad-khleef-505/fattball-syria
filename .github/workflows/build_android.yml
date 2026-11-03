@@ -23,11 +23,19 @@ jobs:
       uses: subosito/flutter-action@v2
       with:
         flutter-version: '3.27.4'
-
         channel: 'stable'
 
     - name: Install dependencies
       run: flutter pub get
+
+    # --- الخطوة الجديدة لفك تشفير مفتاح التوقيع ---
+    - name: Decode Keystore and Create key.properties
+      run: |
+        echo "${{ secrets.KEYSTORE_BASE64 }}" | base64 --decode > android/app/release.keystore
+        echo "storeFile=release.keystore" > android/key.properties
+        echo "storePassword=${{ secrets.KEYSTORE_PASSWORD }}" >> android/key.properties
+        echo "keyAlias=${{ secrets.KEY_ALIAS }}" >> android/key.properties
+        echo "keyPassword=${{ secrets.KEY_PASSWORD }}" >> android/key.properties
 
     - name: Build APK
       run: flutter build apk --release
