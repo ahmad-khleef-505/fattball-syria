@@ -3,7 +3,7 @@ name: Build Android APK
 on:
   push:
     branches: [ "main" ]
-  workflow_dispatch: # يسمح لك بتشغيله يدوياً من GitHub
+  workflow_dispatch:
 
 jobs:
   build:
@@ -22,7 +22,7 @@ jobs:
     - name: Set up Flutter
       uses: subosito/flutter-action@v2
       with:
-        flutter-version: '3.19.0' # أو أي إصدار تستخدمه
+        flutter-version: '3.19.0'
         channel: 'stable'
 
     - name: Install dependencies
