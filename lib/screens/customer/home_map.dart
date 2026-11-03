@@ -510,7 +510,7 @@ class _HomeMapState extends ConsumerState<HomeMap>
 
   Widget _governorateFilter() {
     return DropdownButtonFormField<String?>(
-      initialValue: _selectedGovernorate,
+      value: _selectedGovernorate,
       isExpanded: true,
       decoration: const InputDecoration(
         labelText: 'المحافظة',
@@ -548,7 +548,7 @@ class _HomeMapState extends ConsumerState<HomeMap>
 
   Widget _districtFilter() {
     return DropdownButtonFormField<String?>(
-      initialValue: _selectedDistrict,
+      value: _selectedDistrict,
       isExpanded: true,
       decoration: const InputDecoration(
         labelText: 'الحي / المنطقة',

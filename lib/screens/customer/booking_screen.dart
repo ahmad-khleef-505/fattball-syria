@@ -312,342 +312,345 @@ class _BookingScreenState extends ConsumerState<BookingScreen> {
         maxWidth: 900,
         padding: EdgeInsets.zero,
         child: StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
-        stream: bookingsStream,
-        builder: (context, snapshot) {
-          if (snapshot.hasError) {
-            return Center(
-              child: Padding(
-                padding: const EdgeInsets.all(24),
-                child: Text(
-                  _readError(snapshot.error),
-                  textAlign: TextAlign.center,
-                ),
-              ),
-            );
-          }
-          if (snapshot.connectionState == ConnectionState.waiting) {
-            return const Center(child: CircularProgressIndicator());
-          }
-
-          final List<BookingModel> bookings;
-          try {
-            bookings = _bookingsFromLocks(snapshot.data?.docs ?? []);
-          } on FormatException {
-            return const Center(
-              child: Text('توجد بيانات موعد غير صالحة لهذا الملعب.'),
-            );
-          } on TypeError {
-            return const Center(
-              child: Text('توجد بيانات موعد غير مكتملة لهذا الملعب.'),
-            );
-          } on ArgumentError {
-            return const Center(
-              child: Text('توجد حالة موعد غير معروفة لهذا الملعب.'),
-            );
-          }
-
-          final total = _selectedSlot == null ? null : _bookingTotal;
-
-          return ListView(
-            padding: const EdgeInsets.all(20),
-            children: [
-              Card(
+          stream: bookingsStream,
+          builder: (context, snapshot) {
+            if (snapshot.hasError) {
+              return Center(
                 child: Padding(
-                  padding: const EdgeInsets.all(16),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        widget.field.name,
-                        style: Theme.of(context).textTheme.titleLarge,
-                      ),
-                      const SizedBox(height: 6),
-                      Text(
-                        '${widget.field.governorate} - ${widget.field.district}',
-                      ),
-                      const SizedBox(height: 6),
-                      Text(
-                        '${widget.field.pricePerHour.toStringAsFixed(2)} USD / ساعة',
-                      ),
-                      if (widget.coach != null) ...[
-                        const SizedBox(height: 6),
-                        Text(
-                          'التدريب مع ${widget.coach!.name}: '
-                          '${widget.coach!.pricePerHour.toStringAsFixed(2)} USD / ساعة',
-                        ),
-                      ],
-                    ],
+                  padding: const EdgeInsets.all(24),
+                  child: Text(
+                    _readError(snapshot.error),
+                    textAlign: TextAlign.center,
                   ),
                 ),
-              ),
-              if (widget.coach != null) ...[
-                const SizedBox(height: 12),
+              );
+            }
+            if (snapshot.connectionState == ConnectionState.waiting) {
+              return const Center(child: CircularProgressIndicator());
+            }
+
+            final List<BookingModel> bookings;
+            try {
+              bookings = _bookingsFromLocks(snapshot.data?.docs ?? []);
+            } on FormatException {
+              return const Center(
+                child: Text('توجد بيانات موعد غير صالحة لهذا الملعب.'),
+              );
+            } on TypeError {
+              return const Center(
+                child: Text('توجد بيانات موعد غير مكتملة لهذا الملعب.'),
+              );
+            } on ArgumentError {
+              return const Center(
+                child: Text('توجد حالة موعد غير معروفة لهذا الملعب.'),
+              );
+            }
+
+            final total = _selectedSlot == null ? null : _bookingTotal;
+
+            return ListView(
+              padding: const EdgeInsets.all(20),
+              children: [
                 Card(
                   child: Padding(
                     padding: const EdgeInsets.all(16),
                     child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.stretch,
+                      crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
                         Text(
-                          'بيانات جلسة التدريب',
-                          style: Theme.of(context).textTheme.titleMedium,
+                          widget.field.name,
+                          style: Theme.of(context).textTheme.titleLarge,
                         ),
-                        const SizedBox(height: 8),
-                        const Text(
-                          'أدخل الاسم الأول للطفل فقط. ستُرسل هذه البيانات لصاحب الملعب لإتمام الجلسة.',
+                        const SizedBox(height: 6),
+                        Text(
+                          '${widget.field.governorate} - ${widget.field.district}',
                         ),
-                        const SizedBox(height: 8),
-                        TextField(
-                          controller: _childNameController,
-                          enabled: !_isSubmitting,
-                          maxLength: 60,
-                          textCapitalization: TextCapitalization.words,
-                          decoration: const InputDecoration(
-                            labelText: 'الاسم الأول للطفل',
-                            prefixIcon: Icon(Icons.child_care_outlined),
-                            counterText: '',
+                        const SizedBox(height: 6),
+                        Text(
+                          '${widget.field.pricePerHour.toStringAsFixed(2)} USD / ساعة',
+                        ),
+                        if (widget.coach != null) ...[
+                          const SizedBox(height: 6),
+                          Text(
+                            'التدريب مع ${widget.coach!.name}: '
+                            '${widget.coach!.pricePerHour.toStringAsFixed(2)} USD / ساعة',
                           ),
-                        ),
-                        const SizedBox(height: 8),
-                        TextField(
-                          controller: _childAgeController,
-                          enabled: !_isSubmitting,
-                          keyboardType: TextInputType.number,
-                          inputFormatters: [
-                            FilteringTextInputFormatter.digitsOnly,
-                            LengthLimitingTextInputFormatter(2),
-                          ],
-                          decoration: const InputDecoration(
-                            labelText: 'العمر (3–17 سنة)',
-                            prefixIcon: Icon(Icons.cake_outlined),
-                          ),
-                        ),
+                        ],
                       ],
                     ),
                   ),
                 ),
-              ],
-              const SizedBox(height: 20),
-              Text(
-                'اختر موعداً متاحاً',
-                style: Theme.of(context).textTheme.titleLarge,
-              ),
-              const SizedBox(height: 12),
-              BookingSlotPicker(
-                field: widget.field,
-                bookings: bookings,
-                onSlotSelected: (slot) => setState(() => _selectedSlot = slot),
-              ),
-              if (_selectedSlot != null && total != null) ...[
-                Card(
-                  child: BookingWeatherAlert(
-                    field: widget.field,
-                    startAt: _selectedSlot!.start,
-                  ),
-                ),
-                const SizedBox(height: 20),
-                Card(
-                  child: ListTile(
-                    leading: const Icon(Icons.receipt_outlined),
-                    title: Text(
-                      '${_formatDate(_selectedSlot!.start)} — '
-                      '${_formatTime(_selectedSlot!.start)} إلى '
-                      '${_formatTime(_selectedSlot!.end)}',
-                    ),
-                    subtitle: Text(
-                      _appliedPromo == null
-                          ? 'الإجمالي: ${total.toStringAsFixed(2)} USD'
-                          : 'قبل الخصم: ${_bookingSubtotal.toStringAsFixed(2)} USD'
-                              '\nخصم ${_appliedPromo!.discountPercent}% '
-                              '(${_discountAmount.toStringAsFixed(2)} USD)'
-                              '\nالإجمالي: ${total.toStringAsFixed(2)} USD',
-                    ),
-                  ),
-                ),
-                Card(
-                  child: Padding(
-                    padding: const EdgeInsets.all(14),
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.stretch,
-                      children: [
-                        TextField(
-                          controller: _promoController,
-                          enabled: !_isSubmitting && !_isCheckingPromo,
-                          textCapitalization: TextCapitalization.characters,
-                          textDirection: TextDirection.ltr,
-                          maxLength: 20,
-                          decoration: InputDecoration(
-                            labelText: 'كود الخصم',
-                            hintText: 'FOOTBALL10',
-                            counterText: '',
-                            prefixIcon: const Icon(Icons.local_offer_outlined),
-                            suffixIcon: _appliedPromo == null
-                                ? null
-                                : IconButton(
-                                    tooltip: 'إزالة كود الخصم',
-                                    onPressed: _isSubmitting
-                                        ? null
-                                        : () => setState(() {
-                                              _appliedPromo = null;
-                                              _promoController.clear();
-                                            }),
-                                    icon: const Icon(Icons.close),
-                                  ),
+                if (widget.coach != null) ...[
+                  const SizedBox(height: 12),
+                  Card(
+                    child: Padding(
+                      padding: const EdgeInsets.all(16),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.stretch,
+                        children: [
+                          Text(
+                            'بيانات جلسة التدريب',
+                            style: Theme.of(context).textTheme.titleMedium,
                           ),
-                          onChanged: (_) {
-                            if (_appliedPromo != null) {
-                              setState(() => _appliedPromo = null);
-                            }
-                          },
-                        ),
-                        const SizedBox(height: 8),
-                        OutlinedButton.icon(
-                          onPressed: _isSubmitting || _isCheckingPromo
-                              ? null
-                              : _appliedPromo != null
-                                  ? null
-                                  : _applyPromoCode,
-                          icon: _isCheckingPromo
-                              ? const SizedBox(
-                                  width: 18,
-                                  height: 18,
-                                  child: CircularProgressIndicator(
-                                    strokeWidth: 2,
-                                  ),
-                                )
-                              : Icon(
-                                  _appliedPromo == null
-                                      ? Icons.check_circle_outline
-                                      : Icons.verified_outlined,
-                                ),
-                          label: Text(
-                            _appliedPromo == null
-                                ? 'تطبيق كود الخصم'
-                                : 'تم تطبيق ${_appliedPromo!.discountPercent}% خصم',
+                          const SizedBox(height: 8),
+                          const Text(
+                            'أدخل الاسم الأول للطفل فقط. ستُرسل هذه البيانات لصاحب الملعب لإتمام الجلسة.',
                           ),
-                        ),
-                      ],
-                    ),
-                  ),
-                ),
-                Card(
-                  child: Column(
-                    children: [
-                      SwitchListTile(
-                        value: _depositRequired,
-                        onChanged: _isSubmitting
-                            ? null
-                            : (value) => setState(() {
-                                  _depositRequired = value;
-                                  _cashPaymentConfirmed = false;
-                                  _depositReceipt = null;
-                                  _depositReceiptBytes = null;
-                                }),
-                        title: const Text('دفع عربون لتأكيد الحجز'),
-                        subtitle: Text(
-                          'عربون 20%: ${(total * 0.2).toStringAsFixed(2)} USD',
-                        ),
-                        secondary: const Icon(Icons.verified_user_outlined),
+                          const SizedBox(height: 8),
+                          TextField(
+                            controller: _childNameController,
+                            enabled: !_isSubmitting,
+                            maxLength: 60,
+                            textCapitalization: TextCapitalization.words,
+                            decoration: const InputDecoration(
+                              labelText: 'الاسم الأول للطفل',
+                              prefixIcon: Icon(Icons.child_care_outlined),
+                              counterText: '',
+                            ),
+                          ),
+                          const SizedBox(height: 8),
+                          TextField(
+                            controller: _childAgeController,
+                            enabled: !_isSubmitting,
+                            keyboardType: TextInputType.number,
+                            inputFormatters: [
+                              FilteringTextInputFormatter.digitsOnly,
+                              LengthLimitingTextInputFormatter(2),
+                            ],
+                            decoration: const InputDecoration(
+                              labelText: 'العمر (3–17 سنة)',
+                              prefixIcon: Icon(Icons.cake_outlined),
+                            ),
+                          ),
+                        ],
                       ),
-                      if (_depositRequired) ...[
-                        const Divider(height: 1),
-                        Padding(
-                          padding: const EdgeInsets.all(16),
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.stretch,
-                            children: [
-                              const Text(
-                                'اختر طريقة دفع العربون. لا تتم أي عملية دفع إلكترونية داخل التطبيق.',
-                              ),
-                              const SizedBox(height: 12),
-                              DropdownButtonFormField<String>(
-                                initialValue: _depositMethod,
-                                decoration: const InputDecoration(
-                                  labelText: 'طريقة الدفع',
-                                  prefixIcon: Icon(Icons.payments_outlined),
-                                ),
-                                items: const [
-                                  DropdownMenuItem(
-                                    value: 'cash',
-                                    child: Text('نقداً لصاحب الملعب'),
-                                  ),
-                                  DropdownMenuItem(
-                                    value: 'sham_cash',
-                                    child: Text('شام كاش'),
-                                  ),
-                                  DropdownMenuItem(
-                                    value: 'syriatel_cash',
-                                    child: Text('سيرياتيل كاش'),
-                                  ),
-                                ],
-                                onChanged: _isSubmitting
+                    ),
+                  ),
+                ],
+                const SizedBox(height: 20),
+                Text(
+                  'اختر موعداً متاحاً',
+                  style: Theme.of(context).textTheme.titleLarge,
+                ),
+                const SizedBox(height: 12),
+                BookingSlotPicker(
+                  field: widget.field,
+                  bookings: bookings,
+                  onSlotSelected: (slot) =>
+                      setState(() => _selectedSlot = slot),
+                ),
+                if (_selectedSlot != null && total != null) ...[
+                  Card(
+                    child: BookingWeatherAlert(
+                      field: widget.field,
+                      startAt: _selectedSlot!.start,
+                    ),
+                  ),
+                  const SizedBox(height: 20),
+                  Card(
+                    child: ListTile(
+                      leading: const Icon(Icons.receipt_outlined),
+                      title: Text(
+                        '${_formatDate(_selectedSlot!.start)} — '
+                        '${_formatTime(_selectedSlot!.start)} إلى '
+                        '${_formatTime(_selectedSlot!.end)}',
+                      ),
+                      subtitle: Text(
+                        _appliedPromo == null
+                            ? 'الإجمالي: ${total.toStringAsFixed(2)} USD'
+                            : 'قبل الخصم: ${_bookingSubtotal.toStringAsFixed(2)} USD'
+                                '\nخصم ${_appliedPromo!.discountPercent}% '
+                                '(${_discountAmount.toStringAsFixed(2)} USD)'
+                                '\nالإجمالي: ${total.toStringAsFixed(2)} USD',
+                      ),
+                    ),
+                  ),
+                  Card(
+                    child: Padding(
+                      padding: const EdgeInsets.all(14),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.stretch,
+                        children: [
+                          TextField(
+                            controller: _promoController,
+                            enabled: !_isSubmitting && !_isCheckingPromo,
+                            textCapitalization: TextCapitalization.characters,
+                            textDirection: TextDirection.ltr,
+                            maxLength: 20,
+                            decoration: InputDecoration(
+                              labelText: 'كود الخصم',
+                              hintText: 'FOOTBALL10',
+                              counterText: '',
+                              prefixIcon:
+                                  const Icon(Icons.local_offer_outlined),
+                              suffixIcon: _appliedPromo == null
+                                  ? null
+                                  : IconButton(
+                                      tooltip: 'إزالة كود الخصم',
+                                      onPressed: _isSubmitting
+                                          ? null
+                                          : () => setState(() {
+                                                _appliedPromo = null;
+                                                _promoController.clear();
+                                              }),
+                                      icon: const Icon(Icons.close),
+                                    ),
+                            ),
+                            onChanged: (_) {
+                              if (_appliedPromo != null) {
+                                setState(() => _appliedPromo = null);
+                              }
+                            },
+                          ),
+                          const SizedBox(height: 8),
+                          OutlinedButton.icon(
+                            onPressed: _isSubmitting || _isCheckingPromo
+                                ? null
+                                : _appliedPromo != null
                                     ? null
-                                    : (value) {
-                                        if (value == null) return;
-                                        setState(() {
-                                          _depositMethod = value;
-                                          _cashPaymentConfirmed = false;
-                                          _depositReceipt = null;
-                                          _depositReceiptBytes = null;
-                                        });
-                                      },
-                              ),
-                              const SizedBox(height: 8),
-                              if (_depositMethod == 'cash')
-                                CheckboxListTile(
-                                  contentPadding: EdgeInsets.zero,
-                                  value: _cashPaymentConfirmed,
+                                    : _applyPromoCode,
+                            icon: _isCheckingPromo
+                                ? const SizedBox(
+                                    width: 18,
+                                    height: 18,
+                                    child: CircularProgressIndicator(
+                                      strokeWidth: 2,
+                                    ),
+                                  )
+                                : Icon(
+                                    _appliedPromo == null
+                                        ? Icons.check_circle_outline
+                                        : Icons.verified_outlined,
+                                  ),
+                            label: Text(
+                              _appliedPromo == null
+                                  ? 'تطبيق كود الخصم'
+                                  : 'تم تطبيق ${_appliedPromo!.discountPercent}% خصم',
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+                  Card(
+                    child: Column(
+                      children: [
+                        SwitchListTile(
+                          value: _depositRequired,
+                          onChanged: _isSubmitting
+                              ? null
+                              : (value) => setState(() {
+                                    _depositRequired = value;
+                                    _cashPaymentConfirmed = false;
+                                    _depositReceipt = null;
+                                    _depositReceiptBytes = null;
+                                  }),
+                          title: const Text('دفع عربون لتأكيد الحجز'),
+                          subtitle: Text(
+                            'عربون 20%: ${(total * 0.2).toStringAsFixed(2)} USD',
+                          ),
+                          secondary: const Icon(Icons.verified_user_outlined),
+                        ),
+                        if (_depositRequired) ...[
+                          const Divider(height: 1),
+                          Padding(
+                            padding: const EdgeInsets.all(16),
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.stretch,
+                              children: [
+                                const Text(
+                                  'اختر طريقة دفع العربون. لا تتم أي عملية دفع إلكترونية داخل التطبيق.',
+                                ),
+                                const SizedBox(height: 12),
+                                DropdownButtonFormField<String>(
+                                  value: _depositMethod,
+                                  decoration: const InputDecoration(
+                                    labelText: 'طريقة الدفع',
+                                    prefixIcon: Icon(Icons.payments_outlined),
+                                  ),
+                                  items: const [
+                                    DropdownMenuItem(
+                                      value: 'cash',
+                                      child: Text('نقداً لصاحب الملعب'),
+                                    ),
+                                    DropdownMenuItem(
+                                      value: 'sham_cash',
+                                      child: Text('شام كاش'),
+                                    ),
+                                    DropdownMenuItem(
+                                      value: 'syriatel_cash',
+                                      child: Text('سيرياتيل كاش'),
+                                    ),
+                                  ],
                                   onChanged: _isSubmitting
                                       ? null
-                                      : (value) => setState(
-                                            () => _cashPaymentConfirmed =
-                                                value ?? false,
-                                          ),
-                                  title: const Text(
-                                    'أؤكد تسليم العربون نقداً لصاحب الملعب.',
-                                  ),
-                                  controlAffinity:
-                                      ListTileControlAffinity.leading,
-                                )
-                              else ...[
-                                const Text(
-                                  'تواصل مع صاحب الملعب لمعرفة تفاصيل التحويل، ثم ارفع صورة الإشعار.',
+                                      : (value) {
+                                          if (value == null) return;
+                                          setState(() {
+                                            _depositMethod = value;
+                                            _cashPaymentConfirmed = false;
+                                            _depositReceipt = null;
+                                            _depositReceiptBytes = null;
+                                          });
+                                        },
                                 ),
                                 const SizedBox(height: 8),
-                                OutlinedButton.icon(
-                                  onPressed: _isSubmitting
-                                      ? null
-                                      : _pickDepositReceipt,
-                                  icon: const Icon(Icons.upload_file_outlined),
-                                  label: Text(
-                                    _depositReceipt == null
-                                        ? 'اختيار صورة الإشعار'
-                                        : 'تغيير صورة الإشعار',
+                                if (_depositMethod == 'cash')
+                                  CheckboxListTile(
+                                    contentPadding: EdgeInsets.zero,
+                                    value: _cashPaymentConfirmed,
+                                    onChanged: _isSubmitting
+                                        ? null
+                                        : (value) => setState(
+                                              () => _cashPaymentConfirmed =
+                                                  value ?? false,
+                                            ),
+                                    title: const Text(
+                                      'أؤكد تسليم العربون نقداً لصاحب الملعب.',
+                                    ),
+                                    controlAffinity:
+                                        ListTileControlAffinity.leading,
+                                  )
+                                else ...[
+                                  const Text(
+                                    'تواصل مع صاحب الملعب لمعرفة تفاصيل التحويل، ثم ارفع صورة الإشعار.',
                                   ),
-                                ),
-                                if (_depositReceiptBytes != null) ...[
                                   const SizedBox(height: 8),
-                                  ClipRRect(
-                                    borderRadius: BorderRadius.circular(8),
-                                    child: Image.memory(
-                                      _depositReceiptBytes!,
-                                      height: 150,
-                                      fit: BoxFit.cover,
+                                  OutlinedButton.icon(
+                                    onPressed: _isSubmitting
+                                        ? null
+                                        : _pickDepositReceipt,
+                                    icon:
+                                        const Icon(Icons.upload_file_outlined),
+                                    label: Text(
+                                      _depositReceipt == null
+                                          ? 'اختيار صورة الإشعار'
+                                          : 'تغيير صورة الإشعار',
                                     ),
                                   ),
+                                  if (_depositReceiptBytes != null) ...[
+                                    const SizedBox(height: 8),
+                                    ClipRRect(
+                                      borderRadius: BorderRadius.circular(8),
+                                      child: Image.memory(
+                                        _depositReceiptBytes!,
+                                        height: 150,
+                                        fit: BoxFit.cover,
+                                      ),
+                                    ),
+                                  ],
                                 ],
                               ],
-                            ],
+                            ),
                           ),
-                        ),
+                        ],
                       ],
-                    ],
+                    ),
                   ),
-                ),
+                ],
               ],
-            ],
-          );
-        },
+            );
+          },
         ),
       ),
       bottomNavigationBar: SafeArea(

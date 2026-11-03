@@ -323,7 +323,7 @@ class _CreateTournamentScreenState
           child: ListView(
             children: [
               DropdownButtonFormField<FieldModel>(
-                initialValue: _field,
+                value: _field,
                 isExpanded: true,
                 decoration: const InputDecoration(
                   labelText: 'الملعب المستضيف',
@@ -809,7 +809,7 @@ class _RegisterTeamCardState extends ConsumerState<_RegisterTeamCard> {
                 ),
                 const SizedBox(height: 10),
                 DropdownButtonFormField<String>(
-                  initialValue: _method,
+                  value: _method,
                   decoration:
                       const InputDecoration(labelText: 'طريقة دفع الرسوم'),
                   items: const [

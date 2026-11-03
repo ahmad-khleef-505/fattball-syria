@@ -265,7 +265,7 @@ class _CreateCommunityPostScreenState
           child: ListView(
             children: [
               DropdownButtonFormField<CommunityPostType>(
-                initialValue: _type,
+                value: _type,
                 decoration: const InputDecoration(labelText: 'نوع المنشور'),
                 items: const [
                   DropdownMenuItem(
@@ -351,7 +351,7 @@ class _CreateCommunityPostScreenState
                       }
                     }
                     return DropdownButtonFormField<String?>(
-                      initialValue: _fieldId,
+                      value: _fieldId,
                       isExpanded: true,
                       decoration: const InputDecoration(
                         labelText: 'الملعب (اختياري)',

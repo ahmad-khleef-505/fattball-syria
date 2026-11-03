@@ -431,7 +431,7 @@ class _FieldFormState extends ConsumerState<FieldForm> {
                         ),
                         const SizedBox(height: 14),
                         DropdownButtonFormField<String>(
-                          initialValue: _selectedGovernorate,
+                          value: _selectedGovernorate,
                           decoration: const InputDecoration(
                             labelText: 'المحافظة',
                             prefixIcon: Icon(Icons.map_outlined),
@@ -463,7 +463,7 @@ class _FieldFormState extends ConsumerState<FieldForm> {
                         ),
                         const SizedBox(height: 14),
                         DropdownButtonFormField<String>(
-                          initialValue: _selectedDistrict,
+                          value: _selectedDistrict,
                           decoration: const InputDecoration(
                             labelText: 'الحي / المنطقة',
                             prefixIcon: Icon(Icons.location_city_outlined),

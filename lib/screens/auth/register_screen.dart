@@ -112,7 +112,7 @@ class _RegisterScreenState extends ConsumerState<RegisterScreen> {
                   ),
                   const SizedBox(height: 16),
                   DropdownButtonFormField<String>(
-                    initialValue: _role,
+                    value: _role,
                     decoration: const InputDecoration(
                       labelText: 'نوع الحساب',
                       prefixIcon: Icon(Icons.manage_accounts_outlined),

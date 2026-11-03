@@ -330,7 +330,7 @@ class _WeeklyEarningsChart extends StatelessWidget {
               showTitles: true,
               reservedSize: 46,
               getTitlesWidget: (value, meta) => SideTitleWidget(
-                meta: meta,
+                axisSide: meta.axisSide,
                 child: Text(
                   value == 0 ? '0' : value.toStringAsFixed(0),
                   style: labelStyle,
@@ -348,7 +348,7 @@ class _WeeklyEarningsChart extends StatelessWidget {
                   return const SizedBox.shrink();
                 }
                 return SideTitleWidget(
-                  meta: meta,
+                  axisSide: meta.axisSide,
                   child: Text(_days[index], style: labelStyle),
                 );
               },

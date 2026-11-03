@@ -92,7 +92,7 @@ class _ActivateSubscriptionScreenState
             ),
             const SizedBox(height: 20),
             DropdownButtonFormField<int>(
-              initialValue: _durationDays,
+              value: _durationDays,
               decoration: const InputDecoration(
                 labelText: 'مدة التفعيل',
                 prefixIcon: Icon(Icons.calendar_month_outlined),
