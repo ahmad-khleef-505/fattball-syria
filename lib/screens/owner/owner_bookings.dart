@@ -245,7 +245,7 @@ class _OwnerBookingsScreenState extends ConsumerState<OwnerBookingsScreen> {
                 crossAxisAlignment: CrossAxisAlignment.stretch,
                 children: [
                   DropdownButtonFormField<String>(
-                    initialValue: selectedFieldId,
+                    value: selectedFieldId, // <--- تم الإصلاح هنا
                     decoration: const InputDecoration(labelText: 'الملعب'),
                     items: [
                       for (final field in ownedFields)

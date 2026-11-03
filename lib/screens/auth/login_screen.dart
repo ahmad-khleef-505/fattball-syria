@@ -1,4 +1,3 @@
-import 'dart:ui' as ui;
 import 'package:fattball/providers/auth_provider.dart';
 import 'package:fattball/services/auth_service.dart';
 import 'package:fattball/widgets/sports_button.dart';
@@ -22,12 +21,12 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
   final _passwordController = TextEditingController();
   bool _isLoading = false;
   bool _obscurePassword = true;
-  bool _rememberMe = false; // متغير جديد لزر تذكرني
+  bool _rememberMe = false;
 
   @override
   void initState() {
     super.initState();
-    _loadRememberMe(); // تحميل حالة تذكرني عند فتح الشاشة
+    _loadRememberMe();
   }
 
   Future<void> _loadRememberMe() async {
@@ -54,11 +53,9 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
             password: _passwordController.text,
           );
       
-      // حفظ حالة تذكرني بشكل صحيح
       final prefs = await SharedPreferences.getInstance();
       if (_rememberMe) {
         await prefs.setBool('remember_me', true);
-        // هنا يمكنك إضافة كود لحفظ البريد الإلكتروني إذا أردت
       } else {
         await prefs.remove('remember_me');
       }
@@ -199,8 +196,6 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
                                 : null,
                             onFieldSubmitted: (_) => _submit(),
                           ),
-                          
-                          // إضافة زر تذكرني هنا
                           Row(
                             children: [
                               Checkbox(
@@ -222,7 +217,6 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
                               ),
                             ],
                           ),
-                          
                           const SizedBox(height: 8),
                           SportsButton(
                             onPressed: _isLoading ? null : _submit,

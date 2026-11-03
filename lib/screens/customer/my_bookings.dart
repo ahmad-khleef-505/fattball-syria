@@ -97,21 +97,21 @@ class _MyBookingsScreenState extends ConsumerState<MyBookingsScreen> {
         if (index == 0) Navigator.of(context).maybePop();
       },
       actions: [
-          IconButton(
-            tooltip: 'تسجيل الخروج',
-            onPressed: () async {
-              try {
-                await ref.read(authServiceProvider).signOut();
-              } on AuthServiceException catch (error) {
-                if (context.mounted) {
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    glassSnackBar(content: Text(error.message)),
-                  );
-                }
+        IconButton(
+          tooltip: 'تسجيل الخروج',
+          onPressed: () async {
+            try {
+              await ref.read(authServiceProvider).signOut();
+            } on AuthServiceException catch (error) {
+              if (context.mounted) {
+                ScaffoldMessenger.of(context).showSnackBar(
+                  glassSnackBar(content: Text(error.message)),
+                );
               }
-            },
-            icon: const Icon(Icons.logout),
-          ),
+            }
+          },
+          icon: const Icon(Icons.logout),
+        ),
       ],
       body: StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
         stream: bookingsStream,
@@ -152,13 +152,9 @@ class _MyBookingsScreenState extends ConsumerState<MyBookingsScreen> {
           bookings.sort((a, b) => b.startAt.compareTo(a.startAt));
 
           if (bookings.isEmpty) {
-            return SportsEmptyState(
+            return const SportsEmptyState(
               title: 'لم تحجز ملعباً بعد!',
               message: 'المباراة القادمة تبدأ بخطوة. اكتشف الملاعب واحجز وقتك.',
-              actionLabel: 'اكتشف الملاعب',
-              onAction: () => Navigator.of(context).popUntil(
-                (route) => route.isFirst,
-              ),
             );
           }
 
@@ -203,47 +199,47 @@ class _BookingCard extends StatelessWidget {
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
         BookingTicket(
-      title: FutureBuilder<DocumentSnapshot<Map<String, dynamic>>>(
-        future: fieldFuture,
-        builder: (context, snapshot) {
-          final fieldName = snapshot.data?.data()?['name'];
-          if (fieldName is String) {
-            return Text(
-              fieldName,
-              maxLines: 1,
-              overflow: TextOverflow.ellipsis,
-              style: Theme.of(context).textTheme.titleMedium,
-            );
-          }
-          if (snapshot.hasError) return const Text('تعذر تحميل اسم الملعب.');
-          return const Text('جاري تحميل اسم الملعب...');
-        },
-      ),
-      status: statusLabel(booking.status),
-      statusColor: statusColor(context, booking.status),
-      startAt: dateTime(booking.startAt),
-      endAt: dateTime(booking.endAt),
-      totalPrice: booking.totalPrice.toStringAsFixed(2),
-      currencyCode: AppConstants.currencyCode,
-      discountInfo: booking.promoCode == null
-          ? null
-          : 'كود ${booking.promoCode} — خصم ${booking.discountPercent}%'
-              '${booking.subtotalPrice == null ? '' : ' (وفرت ${(booking.subtotalPrice! - booking.totalPrice).toStringAsFixed(2)} USD)'}',
-      depositInfo: booking.depositRequired
-          ? 'العربون ${booking.depositAmount.toStringAsFixed(2)} USD — '
-              '${switch (booking.depositStatus) {
-            'pending_approval' => 'بانتظار موافقة صاحب الملعب',
-            'approved' => 'تمت الموافقة',
-            'rejected' => 'لم تتم الموافقة',
-            _ => 'قيد المراجعة',
-          }}'
-          : null,
-      trainingInfo: booking.coachId == null
-          ? null
-          : 'جلسة تدريب مع ${booking.coachName ?? 'المدرب'} '
-              'للطفل ${booking.trainingChildName ?? ''}'
-              '${booking.trainingChildAge == null ? '' : ' (${booking.trainingChildAge} سنة)'}',
-    ),
+          title: FutureBuilder<DocumentSnapshot<Map<String, dynamic>>>(
+            future: fieldFuture,
+            builder: (context, snapshot) {
+              final fieldName = snapshot.data?.data()?['name'];
+              if (fieldName is String) {
+                return Text(
+                  fieldName,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: Theme.of(context).textTheme.titleMedium,
+                );
+              }
+              if (snapshot.hasError) return const Text('تعذر تحميل اسم الملعب.');
+              return const Text('جاري تحميل اسم الملعب...');
+            },
+          ),
+          status: statusLabel(booking.status),
+          statusColor: statusColor(context, booking.status),
+          startAt: dateTime(booking.startAt),
+          endAt: dateTime(booking.endAt),
+          totalPrice: booking.totalPrice.toStringAsFixed(2),
+          currencyCode: AppConstants.currencyCode,
+          discountInfo: booking.promoCode == null
+              ? null
+              : 'كود ${booking.promoCode} — خصم ${booking.discountPercent}%'
+                  '${booking.subtotalPrice == null ? '' : ' (وفرت ${(booking.subtotalPrice! - booking.totalPrice).toStringAsFixed(2)} USD)'}',
+          depositInfo: booking.depositRequired
+              ? 'العربون ${booking.depositAmount.toStringAsFixed(2)} USD — '
+                  '${switch (booking.depositStatus) {
+                'pending_approval' => 'بانتظار موافقة صاحب الملعب',
+                'approved' => 'تمت الموافقة',
+                'rejected' => 'لم تتم الموافقة',
+                _ => 'قيد المراجعة',
+              }}'
+              : null,
+          trainingInfo: booking.coachId == null
+              ? null
+              : 'جلسة تدريب مع ${booking.coachName ?? 'المدرب'} '
+                  'للطفل ${booking.trainingChildName ?? ''}'
+                  '${booking.trainingChildAge == null ? '' : ' (${booking.trainingChildAge} سنة)'}',
+        ),
         const SizedBox(height: 8),
         Align(
           alignment: AlignmentDirectional.centerEnd,

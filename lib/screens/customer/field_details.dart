@@ -81,20 +81,21 @@ class FieldDetails extends StatelessWidget {
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-      title: Text(field.name),
-      actions: [
-        IconButton(
-          icon: const Icon(Icons.share),
-          onPressed: () {
-            Share.share(
-              'اسم الملعب: ${field.name}\n'
-              'الموقع: ${field.governorate} - ${field.district}\n'
-              'https://fattball.app/field/${field.fieldId}',
-            );
-          },
-        ),
-      ],
-    ),
+        title: Text(field.name),
+        actions: [
+          IconButton(
+            icon: const Icon(Icons.share),
+            onPressed: () {
+              // تم استخدام الكود المتوافق مع الإصدار 10 من الحزمة
+              Share.share(
+                'اسم الملعب: ${field.name}\n'
+                'الموقع: ${field.governorate} - ${field.district}\n'
+                'https://fattball.app/field/${field.fieldId}',
+              );
+            },
+          ),
+        ],
+      ),
       body: ResponsiveContent(
         padding: EdgeInsets.zero,
         child: ListView(
@@ -111,7 +112,9 @@ class FieldDetails extends StatelessWidget {
                     errorBuilder: (_, __, ___) => ColoredBox(
                       color:
                           Theme.of(context).colorScheme.surfaceContainerHighest,
-                      child: Center(child: Icon(Icons.broken_image_outlined)),
+                      child: const Center(
+                        child: Icon(Icons.broken_image_outlined),
+                      ),
                     ),
                   ),
                 ),
@@ -121,7 +124,8 @@ class FieldDetails extends StatelessWidget {
                 height: 200,
                 child: ColoredBox(
                   color: Theme.of(context).colorScheme.surfaceContainerHighest,
-                  child: Center(child: Icon(Icons.sports_soccer, size: 72)),
+                  child:
+                      const Center(child: Icon(Icons.sports_soccer, size: 72)),
                 ),
               ),
             Padding(
