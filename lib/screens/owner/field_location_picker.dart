@@ -60,7 +60,8 @@ class _FieldLocationPickerState extends State<FieldLocationPicker> {
               onTap: (_, point) => setState(() => _selectedLocation = point),
             ),
             children: [
-              const SportsMapTileLayer(),
+              // تم إزالة const هنا لأننا سنعدل الملف الخاص به
+              SportsMapTileLayer(), 
               MarkerLayer(
                 markers: [
                   Marker(

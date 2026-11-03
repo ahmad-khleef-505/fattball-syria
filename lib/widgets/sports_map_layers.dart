@@ -6,13 +6,21 @@ class SportsMapTileLayer extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final isDark = Theme.of(context).brightness == Brightness.dark;
     return TileLayer(
-      urlTemplate: isDark
-          ? 'https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png'
-          : 'https://tile.openstreetmap.org/{z}/{x}/{y}.png',
-      subdomains: isDark ? const ['a', 'b', 'c', 'd'] : const [],
-      userAgentPackageName: 'com.fattball.app',
+      // رابط OpenStreetMap المجاني الذي لا يحتاج إلى API Key
+      urlTemplate: 'https://tile.openstreetmap.org/{z}/{x}/{y}.png',
+      userAgentPackageName: 'com.fattball.syria', // معرف تطبيقك
+      // إعدادات لجعل الخريطة أنعم
+      tileBuilder: (context, tileWidget, tile) {
+        return ColorFiltered(
+          // لمسة رياضية: إعطاء الخريطة لوناً أخضر خفيفاً (اختياري)
+          colorFilter: ColorFilter.mode(
+            Theme.of(context).colorScheme.primary.withOpacity(0.05),
+            BlendMode.srcOver,
+          ),
+          child: tileWidget,
+        );
+      },
     );
   }
 }
@@ -22,13 +30,11 @@ class SportsMapAttribution extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final isDark = Theme.of(context).brightness == Brightness.dark;
-    return RichAttributionWidget(
+    return const RichAttributionWidget(
       attributions: [
         TextSourceAttribution(
-          isDark
-              ? '© OpenStreetMap contributors © CARTO'
-              : '© OpenStreetMap contributors',
+          'OpenStreetMap contributors',
+          // يمكنك إضافة رابط إذا أردت
         ),
       ],
     );

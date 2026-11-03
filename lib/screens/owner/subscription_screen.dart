@@ -29,8 +29,6 @@ class _OwnerSubscriptionScreenState
     extends ConsumerState<OwnerSubscriptionScreen> {
   late final timezone.Location _damascus;
   bool _isSigningOut = false;
-  static const int _minimumSubscriptionMonths = 1;
-  static const int _maximumSubscriptionMonths = 12;
 
   @override
   void initState() {
@@ -51,8 +49,10 @@ class _OwnerSubscriptionScreenState
   String _subscriptionDurationLabel(int months) {
     return switch (months) {
       1 => 'شهر واحد',
-      2 => 'شهران',
-      >= 3 && <= 10 => '$months أشهر',
+      2 => 'شهرين',
+      3 => '3 أشهر',
+      6 => '6 أشهر',
+      12 => 'سنة كاملة',
       _ => '$months شهراً',
     };
   }
@@ -68,7 +68,7 @@ class _OwnerSubscriptionScreenState
     await showDialog<void>(
       context: context,
       builder: (dialogContext) {
-        var selectedMonths = _minimumSubscriptionMonths;
+        var selectedMonths = 1;
         var isOpeningWhatsApp = false;
 
         return StatefulBuilder(
@@ -89,14 +89,12 @@ class _OwnerSubscriptionScreenState
                     labelText: 'مدة الاشتراك',
                     prefixIcon: Icon(Icons.calendar_month_outlined),
                   ),
-                  items: [
-                    for (var months = _minimumSubscriptionMonths;
-                        months <= _maximumSubscriptionMonths;
-                        months++)
-                      DropdownMenuItem(
-                        value: months,
-                        child: Text(_subscriptionDurationLabel(months)),
-                      ),
+                  items: const [
+                    DropdownMenuItem(value: 1, child: Text('شهر واحد')),
+                    DropdownMenuItem(value: 2, child: Text('شهرين')),
+                    DropdownMenuItem(value: 3, child: Text('3 أشهر')),
+                    DropdownMenuItem(value: 6, child: Text('6 أشهر')),
+                    DropdownMenuItem(value: 12, child: Text('سنة كاملة')),
                   ],
                   onChanged: isOpeningWhatsApp
                       ? null
@@ -138,8 +136,7 @@ class _OwnerSubscriptionScreenState
                             ScaffoldMessenger.of(this.context).showSnackBar(
                               glassSnackBar(
                                 content: const Text(
-                                  'تعذر فتح واتساب. تحقق من تثبيت التطبيق '
-                                  'أو أعد المحاولة.',
+                                  'تعذر فتح واتساب. تحقق من تثبيت التطبيق.',
                                 ),
                               ),
                             );
@@ -180,11 +177,38 @@ class _OwnerSubscriptionScreenState
     );
   }
 
+  // دالة تسجيل الخروج المعدلة مع نافذة التأكيد
+  Future<void> _confirmSignOut() async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        title: const Text('تسجيل الخروج'),
+        content: const Text('هل تريد تسجيل الخروج بالفعل؟'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(dialogContext).pop(false),
+            child: const Text('لا'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.of(dialogContext).pop(true),
+            child: const Text('نعم'),
+          ),
+        ],
+      ),
+    );
+
+    if (confirmed == true) {
+      await _signOut();
+    }
+  }
+
   Future<void> _signOut() async {
     if (_isSigningOut) return;
     setState(() => _isSigningOut = true);
     try {
       await ref.read(authServiceProvider).signOut();
+      // ملاحظة: الانتقال لصفحة تسجيل الدخول يتم تلقائياً 
+      // لأن التطبيق يستمع لحالة المصادقة (Auth State) في main.dart
     } on AuthServiceException catch (error) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
@@ -250,7 +274,8 @@ class _OwnerSubscriptionScreenState
       actions: [
         IconButton(
           tooltip: 'تسجيل الخروج',
-          onPressed: _isSigningOut ? null : _signOut,
+          // تم تغيير الدالة هنا لتستدعي نافذة التأكيد
+          onPressed: _isSigningOut ? null : _confirmSignOut,
           icon: _isSigningOut
               ? const SizedBox.square(
                   dimension: 20,

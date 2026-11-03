@@ -16,6 +16,7 @@ class FieldModel {
     required this.images,
     required this.isActive,
     required this.createdAt,
+    this.currency = 'USD',
     this.ownerSubscriptionExpiry,
     this.ownerPhone,
   });
@@ -29,6 +30,7 @@ class FieldModel {
   final String address;
   final GeoPoint geoPoint;
   final double pricePerHour;
+  final String currency; // الحقل الجديد
   final String openTime;
   final String closeTime;
   final List<String> images;
@@ -53,6 +55,7 @@ class FieldModel {
       address: map['address'] as String,
       geoPoint: geoPoint,
       pricePerHour: (map['pricePerHour'] as num).toDouble(),
+      currency: map['currency'] as String? ?? 'USD', // جلب العملة
       openTime: map['openTime'] as String,
       closeTime: map['closeTime'] as String,
       images: List<String>.from(map['images'] as List<dynamic>),
@@ -78,6 +81,7 @@ class FieldModel {
       'address': address,
       'geoPoint': geoPoint,
       'pricePerHour': pricePerHour,
+      'currency': currency, // حفظ العملة
       'openTime': openTime,
       'closeTime': closeTime,
       'images': images,

@@ -29,7 +29,9 @@ class OwnerBookingsScreen extends ConsumerStatefulWidget {
 class _OwnerBookingsScreenState extends ConsumerState<OwnerBookingsScreen> {
   late final timezone.Location _damascus;
   final Set<String> _updatingBookingIds = {};
-  bool _showAllBookings = false;
+  
+  // 0 = اليوم والغد، 1 = مستقبلية
+  int _selectedSection = 0; 
 
   @override
   void initState() {
@@ -245,7 +247,7 @@ class _OwnerBookingsScreenState extends ConsumerState<OwnerBookingsScreen> {
                 crossAxisAlignment: CrossAxisAlignment.stretch,
                 children: [
                   DropdownButtonFormField<String>(
-                    value: selectedFieldId, // <--- تم الإصلاح هنا
+                    value: selectedFieldId,
                     decoration: const InputDecoration(labelText: 'الملعب'),
                     items: [
                       for (final field in ownedFields)
@@ -470,6 +472,30 @@ class _OwnerBookingsScreenState extends ConsumerState<OwnerBookingsScreen> {
     }
   }
 
+  Future<void> _confirmSignOut() async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        title: const Text('تسجيل الخروج'),
+        content: const Text('هل تريد تسجيل الخروج بالفعل؟'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(dialogContext).pop(false),
+            child: const Text('لا'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.of(dialogContext).pop(true),
+            child: const Text('نعم'),
+          ),
+        ],
+      ),
+    );
+
+    if (confirmed == true) {
+      await _signOut();
+    }
+  }
+
   Future<void> _signOut() async {
     try {
       await ref.read(authServiceProvider).signOut();
@@ -550,7 +576,7 @@ class _OwnerBookingsScreenState extends ConsumerState<OwnerBookingsScreen> {
         ),
         IconButton(
           tooltip: 'تسجيل الخروج',
-          onPressed: _signOut,
+          onPressed: _confirmSignOut,
           icon: const Icon(Icons.logout),
         ),
       ],
@@ -599,55 +625,55 @@ class _OwnerBookingsScreenState extends ConsumerState<OwnerBookingsScreen> {
                     );
                   }
                 }
-                bookings.sort((a, b) => b.startAt.compareTo(a.startAt));
+                // ترتيب تصاعدي ليظهر الأقرب أولاً
+                bookings.sort((a, b) => a.startAt.compareTo(b.startAt));
 
-                final visibleBookings = _showAllBookings
-                    ? bookings
-                    : bookings
-                        .where(
-                          (booking) =>
-                              booking.startAt.isAfter(DateTime.now()) &&
-                              (booking.status == BookingStatus.pending ||
-                                  booking.status == BookingStatus.confirmed),
-                        )
-                        .toList();
+                final now = DateTime.now();
+                // نهاية يوم غد (منتصف ليل اليوم الذي يليه)
+                final endOfTomorrow = DateTime(now.year, now.month, now.day + 2);
+
+                // تصفية الحجوزات بناءً على القسم المختار
+                final visibleBookings = bookings.where((booking) {
+                  if (_selectedSection == 0) {
+                    // القسم الأول: حجوزات اليوم والغد
+                    return booking.startAt.isBefore(endOfTomorrow);
+                  } else {
+                    // القسم الثاني: الحجوزات المستقبلية (بعد يوم غد)
+                    return booking.startAt.isAfter(endOfTomorrow) ||
+                        booking.startAt.isAtSameMomentAs(endOfTomorrow);
+                  }
+                }).toList();
 
                 return Column(
                   children: [
                     Padding(
                       padding: const EdgeInsetsDirectional.fromSTEB(16, 12, 16, 0),
-                      child: SegmentedButton<bool>(
+                      child: SegmentedButton<int>(
                         segments: const [
-                          ButtonSegment<bool>(
-                            value: false,
-                            icon: Icon(Icons.upcoming_outlined),
-                            label: Text('القادمة'),
+                          ButtonSegment<int>(
+                            value: 0,
+                            icon: Icon(Icons.today_outlined),
+                            label: Text('اليوم والغد'),
                           ),
-                          ButtonSegment<bool>(
-                            value: true,
-                            icon: Icon(Icons.list_alt_outlined),
-                            label: Text('كل الحجوزات'),
+                          ButtonSegment<int>(
+                            value: 1,
+                            icon: Icon(Icons.event_outlined),
+                            label: Text('مستقبلية'),
                           ),
                         ],
-                        selected: {_showAllBookings},
+                        selected: {_selectedSection},
                         onSelectionChanged: (selection) {
-                          setState(() => _showAllBookings = selection.first);
+                          setState(() => _selectedSection = selection.first);
                         },
                       ),
                     ),
                     Expanded(
                       child: visibleBookings.isEmpty
                           ? SportsEmptyState(
-                              title: bookings.isEmpty
-                                  ? 'لا توجد حجوزات حتى الآن'
-                                  : 'لا توجد حجوزات قادمة',
-                              message: bookings.isEmpty
-                                  ? 'ستظهر هنا الحجوزات الجديدة لملاعبك.'
-                                  : 'يمكنك عرض كل الحجوزات لمراجعة السجل السابق.',
-                              actionLabel: bookings.isEmpty ? null : 'عرض كل الحجوزات',
-                              onAction: bookings.isEmpty
-                                  ? null
-                                  : () => setState(() => _showAllBookings = true),
+                              title: 'لا توجد حجوزات',
+                              message: _selectedSection == 0
+                                  ? 'لا توجد حجوزات مسجلة لهذا اليوم أو الغد.'
+                                  : 'لا توجد حجوزات مستقبلية مسجلة.',
                             )
                           : ListView.separated(
                               padding: const EdgeInsets.all(16),
@@ -684,6 +710,7 @@ class _OwnerBookingsScreenState extends ConsumerState<OwnerBookingsScreen> {
   }
 }
 
+// ... (باقي كلاس _OwnerBookingCard كما هو دون أي تعديل)
 class _OwnerBookingCard extends StatelessWidget {
   const _OwnerBookingCard({
     required this.booking,

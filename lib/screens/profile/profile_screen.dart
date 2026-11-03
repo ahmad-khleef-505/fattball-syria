@@ -90,6 +90,30 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
     }
   }
 
+  Future<void> _confirmSignOut() async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        title: const Text('تسجيل الخروج'),
+        content: const Text('هل تريد تسجيل الخروج بالفعل؟'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(dialogContext).pop(false),
+            child: const Text('لا'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.of(dialogContext).pop(true),
+            child: const Text('نعم'),
+          ),
+        ],
+      ),
+    );
+
+    if (confirmed == true) {
+      await _signOut();
+    }
+  }
+
   Future<void> _signOut() async {
     setState(() => _isSigningOut = true);
     try {
@@ -203,7 +227,8 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
               backgroundColor: Theme.of(context).colorScheme.error,
               foregroundColor: Theme.of(context).colorScheme.onError,
             ),
-            onPressed: _isSigningOut ? null : _signOut,
+            // تم ربط زر تسجيل الخروج بدالة التأكيد
+            onPressed: _isSigningOut ? null : _confirmSignOut,
             icon: _isSigningOut
                 ? const SizedBox.square(
                     dimension: 18,

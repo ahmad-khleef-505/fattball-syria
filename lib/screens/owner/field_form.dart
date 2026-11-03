@@ -46,6 +46,10 @@ class _FieldFormState extends ConsumerState<FieldForm> {
   List<String> _existingImages = [];
   String? _selectedGovernorate;
   String? _selectedDistrict;
+  
+  // متغيرات العملة
+  String? _selectedCurrency; 
+
   String _openTime = '08:00';
   String _closeTime = '23:00';
   LatLng _location = _defaultLocation;
@@ -67,6 +71,7 @@ class _FieldFormState extends ConsumerState<FieldForm> {
       _ownerPhoneController.text = field.ownerPhone ?? '';
       _selectedGovernorate = field.governorate;
       _selectedDistrict = field.district;
+      _selectedCurrency = field.currency; // جلب العملة المحفوظة مسبقاً
       _openTime = field.openTime;
       _closeTime = field.closeTime;
       _location = LatLng(field.geoPoint.latitude, field.geoPoint.longitude);
@@ -242,6 +247,7 @@ class _FieldFormState extends ConsumerState<FieldForm> {
       final subscriptionActive = widget.user.isActive &&
           subscriptionExpiry != null &&
           subscriptionExpiry.isAfter(DateTime.now());
+      
       final field = FieldModel(
         fieldId: document.id,
         ownerId: widget.user.uid,
@@ -252,6 +258,7 @@ class _FieldFormState extends ConsumerState<FieldForm> {
         address: _addressController.text.trim(),
         geoPoint: GeoPoint(_location.latitude, _location.longitude),
         pricePerHour: double.parse(_priceController.text.trim()),
+        currency: _selectedCurrency ?? 'USD', // حفظ العملة المختارة
         openTime: _openTime,
         closeTime: _closeTime,
         images: [..._existingImages, ...uploadedUrls],
@@ -405,8 +412,45 @@ class _FieldFormState extends ConsumerState<FieldForm> {
                               : null,
                         ),
                         const SizedBox(height: 14),
+                        
+                        // --- بداية التعديل: قائمة العملة ---
+                        DropdownButtonFormField<String>(
+                          value: _selectedCurrency,
+                          decoration: const InputDecoration(
+                            labelText: 'العملة',
+                            prefixIcon: Icon(Icons.currency_exchange),
+                          ),
+                          items: const [
+                            DropdownMenuItem(
+                              value: 'USD',
+                              child: Text('دولار أمريكي (\$)'),
+                            ),
+                            DropdownMenuItem(
+                              value: 'SYP',
+                              child: Text('ليرة سورية جديدة (ل.س)'),
+                            ),
+                            DropdownMenuItem(
+                              value: 'TRY',
+                              child: Text('ليرة تركية (TL)'),
+                            ),
+                          ],
+                          onChanged: _isSaving
+                              ? null
+                              : (value) {
+                                  setState(() {
+                                    _selectedCurrency = value;
+                                  });
+                                },
+                          validator: (value) => value == null
+                              ? 'يجب اختيار العملة أولاً'
+                              : null,
+                        ),
+                        const SizedBox(height: 14),
+
+                        // --- التعديل: حقل السعر ---
                         TextFormField(
                           controller: _priceController,
+                          enabled: _selectedCurrency != null && !_isSaving,
                           keyboardType: const TextInputType.numberWithOptions(
                             decimal: true,
                           ),
@@ -415,11 +459,20 @@ class _FieldFormState extends ConsumerState<FieldForm> {
                               RegExp(r'^\d*\.?\d{0,2}'),
                             ),
                           ],
-                          decoration: const InputDecoration(
-                            labelText: 'السعر لكل ساعة (USD)',
-                            prefixIcon: Icon(Icons.attach_money),
+                          decoration: InputDecoration(
+                            labelText: 'السعر',
+                            prefixIcon: const Icon(Icons.attach_money),
+                            helperText: 'سعر الحجز لكل 90 دقيقة', // النص التوضيحي
+                            suffixText: _selectedCurrency == 'USD'
+                                ? '\$'
+                                : _selectedCurrency == 'SYP'
+                                    ? 'ل.س'
+                                    : _selectedCurrency == 'TRY'
+                                        ? 'TL'
+                                        : '',
                           ),
                           validator: (value) {
+                            if (_selectedCurrency == null) return null;
                             final price = double.tryParse(value?.trim() ?? '');
                             if (price == null ||
                                 !price.isFinite ||
@@ -429,6 +482,8 @@ class _FieldFormState extends ConsumerState<FieldForm> {
                             return null;
                           },
                         ),
+                        // --- نهاية التعديل ---
+                        
                         const SizedBox(height: 14),
                         DropdownButtonFormField<String>(
                           value: _selectedGovernorate,

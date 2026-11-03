@@ -4,7 +4,6 @@ import 'package:fattball/models/booking_model.dart';
 import 'package:fattball/models/coach_model.dart';
 import 'package:fattball/models/field_model.dart';
 import 'package:fattball/models/user_model.dart';
-import 'package:cloud_functions/cloud_functions.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:timezone/data/latest.dart' as timezone_data;
 import 'package:timezone/timezone.dart' as timezone;
@@ -45,17 +44,13 @@ class BookingService {
   BookingService({
     FirebaseFirestore? firestore,
     FirebaseAuth? auth,
-    FirebaseFunctions? functions,
   })  : _firestore = firestore ?? FirebaseFirestore.instance,
-        _auth = auth ?? FirebaseAuth.instance,
-        _functions =
-            functions ?? FirebaseFunctions.instanceFor(region: 'me-central1') {
+        _auth = auth ?? FirebaseAuth.instance {
     _initializeTimeZones();
   }
 
   final FirebaseFirestore _firestore;
   final FirebaseAuth _auth;
-  final FirebaseFunctions _functions;
   static bool _timeZonesInitialized = false;
 
   static void _initializeTimeZones() {
@@ -128,8 +123,6 @@ class BookingService {
         .toList();
 
     try {
-      // The public daily lock contains only availability data; booking documents
-      // remain private to their customer and the field owner.
       final result = await _firestore.runTransaction<BookingResult>(
         (transaction) async {
           final fieldSnapshot = await transaction.get(fieldRef);
@@ -282,7 +275,7 @@ class BookingService {
             customerName: customer.name,
             startAt: startUtc,
             endAt: endUtc,
-            status: BookingStatus.pending,
+            status: BookingStatus.pending, // الحالة فوراً pending لتظهر للمالك
             totalPrice: totalPrice,
             createdAt: DateTime.now().toUtc(),
             subtotalPrice: subtotalPrice,
@@ -474,6 +467,7 @@ class BookingService {
     }
   }
 
+  // تم استبدال الدالة السحابية بعملية مباشرة عبر Firestore
   Future<void> rescheduleBooking({
     required String bookingId,
     required String ownerId,
@@ -489,17 +483,78 @@ class BookingService {
       throw const BookingServiceException('الفترة الجديدة غير صالحة.');
     }
 
+    final bookingRef = _firestore.collection('bookings').doc(bookingId);
     try {
-      await _functions.httpsCallable('rescheduleBookingCallable').call({
-        'bookingId': bookingId,
-        'startAt': startAt.toUtc().toIso8601String(),
-        'endAt': endAt.toUtc().toIso8601String(),
+      await _firestore.runTransaction<void>((transaction) async {
+        final bookingSnapshot = await transaction.get(bookingRef);
+        final bookingData = bookingSnapshot.data();
+        if (bookingData == null) {
+          throw const BookingServiceException('الحجز غير موجود.');
+        }
+        
+        final fieldId = bookingData['fieldId'];
+        final oldStart = (bookingData['startAt'] as Timestamp).toDate();
+        final oldEnd = (bookingData['endAt'] as Timestamp).toDate();
+        
+        final newStartUtc = startAt.toUtc();
+        final newEndUtc = endAt.toUtc();
+
+        // التحقق من التعارض مع الحجوزات الأخرى في الأيام الجديدة
+        final newLockRefs = _dayKeys(newStartUtc, newEndUtc)
+            .map((dayKey) => _firestore.collection('booking_locks').doc('${fieldId}_$dayKey'))
+            .toList();
+            
+        for (final lockRef in newLockRefs) {
+          final lockSnapshot = await transaction.get(lockRef);
+          final reservations = lockSnapshot.data()?['reservations'] as Map<String, dynamic>?;
+          if (reservations != null) {
+            for (final entry in reservations.entries) {
+              if (entry.key == bookingId) continue;
+              if (_isOverlappingReservation(entry.value, newStartUtc, newEndUtc)) {
+                throw const BookingServiceException('الموعد الجديد يتعارض مع حجز آخر.');
+              }
+            }
+          }
+        }
+
+        // 1. تحديث بيانات الحجز
+        transaction.update(bookingRef, {
+          'startAt': Timestamp.fromDate(newStartUtc),
+          'endAt': Timestamp.fromDate(newEndUtc),
+        });
+
+        // 2. إزالة الحجز من أقفال الأيام القديمة
+        final oldLockRefs = _dayKeys(oldStart, oldEnd)
+            .map((dayKey) => _firestore.collection('booking_locks').doc('${fieldId}_$dayKey'))
+            .toList();
+        for (final lockRef in oldLockRefs) {
+          final lockSnapshot = await transaction.get(lockRef);
+          final reservations = lockSnapshot.data()?['reservations'] as Map<String, dynamic>?;
+          if (reservations != null && reservations.containsKey(bookingId)) {
+            transaction.update(lockRef, {'reservations.$bookingId': FieldValue.delete()});
+          }
+        }
+
+        // 3. إضافة الحجز إلى أقفال الأيام الجديدة
+        for (final lockRef in newLockRefs) {
+          transaction.set(lockRef, {
+            'reservations': {
+              bookingId: {
+                'bookingId': bookingId,
+                'startAt': Timestamp.fromDate(newStartUtc),
+                'endAt': Timestamp.fromDate(newEndUtc),
+                'status': bookingData['status'],
+              }
+            }
+          }, SetOptions(merge: true));
+        }
       });
-    } on FirebaseFunctionsException catch (error) {
-      throw BookingServiceException(_callableErrorMessage(error));
+    } on FirebaseException catch (error) {
+      throw BookingServiceException(_firebaseErrorMessage(error.code));
     }
   }
 
+  // تم استبدال الدالة السحابية بعملية مباشرة عبر Firestore
   Future<String> addFieldMaintenance({
     required String fieldId,
     required DateTime startAt,
@@ -516,23 +571,24 @@ class BookingService {
         reason.trim().length > 160) {
       throw const BookingServiceException('تحقق من بيانات فترة الصيانة.');
     }
-    final maintenanceId =
-        _firestore.collection('field_maintenance').doc().id;
+    
     try {
-      await _functions.httpsCallable('manageFieldMaintenance').call({
-        'action': 'add',
+      final maintenanceRef = _firestore.collection('field_maintenance').doc();
+      await maintenanceRef.set({
+        'ownerId': ownerId,
         'fieldId': fieldId,
-        'maintenanceId': maintenanceId,
-        'startAt': startAt.toUtc().toIso8601String(),
-        'endAt': endAt.toUtc().toIso8601String(),
+        'startAt': Timestamp.fromDate(startAt.toUtc()),
+        'endAt': Timestamp.fromDate(endAt.toUtc()),
         'reason': reason.trim(),
+        'createdAt': Timestamp.now(),
       });
-      return maintenanceId;
-    } on FirebaseFunctionsException catch (error) {
-      throw BookingServiceException(_callableErrorMessage(error));
+      return maintenanceRef.id;
+    } on FirebaseException catch (error) {
+      throw BookingServiceException(_firebaseErrorMessage(error.code));
     }
   }
 
+  // تم استبدال الدالة السحابية بعملية مباشرة عبر Firestore
   Future<void> removeFieldMaintenance({
     required String fieldId,
     required String maintenanceId,
@@ -541,13 +597,9 @@ class BookingService {
       throw const BookingServiceException('سجّل الدخول أولاً.');
     }
     try {
-      await _functions.httpsCallable('manageFieldMaintenance').call({
-        'action': 'remove',
-        'fieldId': fieldId,
-        'maintenanceId': maintenanceId,
-      });
-    } on FirebaseFunctionsException catch (error) {
-      throw BookingServiceException(_callableErrorMessage(error));
+      await _firestore.collection('field_maintenance').doc(maintenanceId).delete();
+    } on FirebaseException catch (error) {
+      throw BookingServiceException(_firebaseErrorMessage(error.code));
     }
   }
 
@@ -558,21 +610,6 @@ class BookingService {
         .collection('field_maintenance')
         .where('ownerId', isEqualTo: ownerId)
         .snapshots();
-  }
-
-  String _callableErrorMessage(FirebaseFunctionsException error) {
-    final message = error.message;
-    if (message != null && message.trim().isNotEmpty) return message;
-    return switch (error.code) {
-      'unauthenticated' => 'انتهت جلسة الدخول. أعد تسجيل الدخول.',
-      'permission-denied' => 'ليست لديك صلاحية تنفيذ هذا الإجراء.',
-      'not-found' => 'لم يُعثر على الحجز أو فترة الصيانة المطلوبة.',
-      'invalid-argument' => 'البيانات المرسلة غير صالحة.',
-      'already-exists' => 'هذا الموعد يتعارض مع حجز أو فترة صيانة.',
-      'failed-precondition' => 'لا يمكن تنفيذ الإجراء بالحالة الحالية.',
-      'unavailable' => 'الخدمة غير متاحة حالياً. تحقق من اتصالك.',
-      _ => 'تعذر تنفيذ الطلب. يرجى المحاولة مجدداً.',
-    };
   }
 
   List<String> _dayKeys(DateTime startUtc, DateTime endUtc) {

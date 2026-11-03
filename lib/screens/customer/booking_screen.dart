@@ -38,6 +38,7 @@ class BookingScreen extends ConsumerStatefulWidget {
 class _BookingScreenState extends ConsumerState<BookingScreen> {
   late final timezone.Location _damascus;
   DateTimeRange? _selectedSlot;
+  DateTime _selectedDay = DateTime.now();
   final _imagePicker = ImagePicker();
   final _promoController = TextEditingController();
   final _childNameController = TextEditingController();
@@ -66,6 +67,13 @@ class _BookingScreenState extends ConsumerState<BookingScreen> {
     super.dispose();
   }
 
+  void _onDayChanged(DateTime newDay) {
+    setState(() {
+      _selectedDay = newDay;
+      _selectedSlot = null;
+    });
+  }
+
   Future<void> _applyPromoCode() async {
     final code = _promoController.text.trim();
     if (code.isEmpty) {
@@ -88,20 +96,6 @@ class _BookingScreenState extends ConsumerState<BookingScreen> {
         setState(() => _appliedPromo = null);
         _showMessage(error.message);
       }
-    } on FormatException catch (error) {
-      if (mounted) {
-        setState(() => _appliedPromo = null);
-        _showMessage(error.message);
-      }
-    } on FirebaseException catch (error) {
-      if (mounted) {
-        setState(() => _appliedPromo = null);
-        _showMessage(
-          error.code == 'permission-denied'
-              ? 'لا يمكن التحقق من كود الخصم لهذا الملعب.'
-              : 'تعذر التحقق من الكود. تحقق من الاتصال وحاول مجدداً.',
-        );
-      }
     } finally {
       if (mounted) setState(() => _isCheckingPromo = false);
     }
@@ -110,7 +104,7 @@ class _BookingScreenState extends ConsumerState<BookingScreen> {
   Future<void> _submit() async {
     final slot = _selectedSlot;
     if (slot == null) {
-      HapticFeedback.heavyImpact(); // إضافة الاهتزاز عند الخطأ
+      HapticFeedback.heavyImpact();
       _showMessage('اختر الفترة التي تريد حجزها أولاً.');
       return;
     }
@@ -118,181 +112,40 @@ class _BookingScreenState extends ConsumerState<BookingScreen> {
     final childAge = int.tryParse(_childAgeController.text.trim());
     if (widget.coach != null &&
         (childName.length < 2 ||
-            childName.length > 60 ||
             childAge == null ||
             childAge < 3 ||
             childAge > 17)) {
       _showMessage('أدخل الاسم الأول للطفل وعمره بين 3 و17 سنة.');
       return;
     }
-    if (_depositRequired &&
-        _depositMethod == 'cash' &&
-        !_cashPaymentConfirmed) {
-      _showMessage('أكد تسليم العربون نقداً قبل إرسال الطلب.');
-      return;
-    }
-    if (_depositRequired &&
-        _depositMethod != 'cash' &&
-        _depositReceipt == null) {
-      _showMessage('ارفع صورة إشعار التحويل لإرسال طلب العربون.');
-      return;
-    }
-
-    final confirmed = await showDialog<bool>(
-      context: context,
-      builder: (context) => AlertDialog(
-        title: const Text('تأكيد الحجز'),
-        content: Text(
-          'هل تريد إرسال طلب حجز من ${_formatTime(slot.start)} '
-          'إلى ${_formatTime(slot.end)}؟'
-          '${_appliedPromo == null ? '' : '\n\nالإجمالي بعد الخصم: ${_bookingTotal.toStringAsFixed(2)} USD'}'
-          '${widget.coach == null ? '' : '\n\nجلسة تدريب مع ${widget.coach!.name} للطفل $childName، عمر $childAge سنة.'}'
-          '${_depositRequired ? '\n\nالعربون المطلوب: ${(_bookingTotal * 0.2).toStringAsFixed(2)} USD' : ''}',
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.of(context).pop(false),
-            child: const Text('رجوع'),
-          ),
-          FilledButton(
-            onPressed: () => Navigator.of(context).pop(true),
-            child: const Text('تأكيد'),
-          ),
-        ],
-      ),
-    );
-    if (confirmed != true || !mounted) return;
 
     setState(() => _isSubmitting = true);
     try {
-      final receiptUrl = _depositRequired && _depositMethod != 'cash'
-          ? await _uploadDepositReceipt()
-          : null;
       final result = await ref.read(bookingServiceProvider).createBooking(
             field: widget.field,
             customer: widget.customer,
             startAt: slot.start,
             endAt: slot.end,
             depositRequired: _depositRequired,
-            depositMethod: _depositRequired ? _depositMethod : null,
-            depositReceiptUrl: receiptUrl,
+            depositMethod: _depositMethod,
             promoCode: _appliedPromo?.code,
             coach: widget.coach,
             trainingChildName: widget.coach == null ? null : childName,
             trainingChildAge: widget.coach == null ? null : childAge,
           );
-
       if (!mounted) return;
-      switch (result) {
-        case BookingCreated():
-          HapticFeedback.heavyImpact(); // إضافة الاهتزاز عند النجاح
-          _showMessage(
-            _depositRequired
-                ? 'تم إرسال إثبات العربون. يبقى الحجز بانتظار موافقة صاحب الملعب.'
-                : 'تم إرسال طلب الحجز بنجاح.',
-          );
-          Navigator.of(context).pop();
-        case BookingConflict(:final message):
-          _showMessage(message);
-        case BookingRejected(:final message):
-          _showMessage(message);
-      }
-    } on BookingServiceException catch (error) {
-      if (mounted) _showMessage(error.message);
-    } on FirebaseException catch (error) {
-      if (mounted) {
-        _showMessage(
-          error.code == 'permission-denied'
-              ? 'تعذر رفع إثبات العربون بسبب إعدادات الصلاحيات.'
-              : 'تعذر رفع إثبات العربون. تحقق من الاتصال وحاول مجدداً.',
-        );
+      if (result is BookingCreated) {
+        HapticFeedback.heavyImpact();
+        _showMessage('تم إرسال طلب الحجز بنجاح.');
+        Navigator.of(context).pop();
+      } else if (result is BookingConflict) {
+        _showMessage(result.message);
+      } else if (result is BookingRejected) {
+        _showMessage(result.message);
       }
     } finally {
       if (mounted) setState(() => _isSubmitting = false);
     }
-  }
-
-  Future<String> _uploadDepositReceipt() async {
-    final receipt = _depositReceipt;
-    if (receipt == null || _depositReceiptBytes == null) {
-      throw const BookingServiceException('اختر صورة إشعار التحويل أولاً.');
-    }
-    final mimeType = receipt.mimeType ?? 'image/jpeg';
-    final extension = switch (mimeType) {
-      'image/png' => 'png',
-      'image/webp' => 'webp',
-      _ => 'jpg',
-    };
-    final receiptId =
-        FirebaseFirestore.instance.collection('bookings').doc().id;
-    final reference = FirebaseStorage.instance.ref().child(
-          'deposit_receipts/${widget.field.fieldId}/${widget.customer.uid}/'
-          '$receiptId.$extension',
-        );
-    await reference.putData(
-      _depositReceiptBytes!,
-      SettableMetadata(
-        contentType: mimeType,
-        customMetadata: {
-          'customerId': widget.customer.uid,
-          'fieldId': widget.field.fieldId,
-        },
-      ),
-    );
-    return reference.getDownloadURL();
-  }
-
-  Future<void> _pickDepositReceipt() async {
-    try {
-      final receipt = await _imagePicker.pickImage(
-        source: ImageSource.gallery,
-        imageQuality: 82,
-      );
-      if (receipt == null) return;
-      final bytes = await receipt.readAsBytes();
-      if (bytes.length > 5 * 1024 * 1024) {
-        _showMessage('حجم صورة الإيصال يجب ألا يتجاوز 5 ميغابايت.');
-        return;
-      }
-      if (mounted) {
-        setState(() {
-          _depositReceipt = receipt;
-          _depositReceiptBytes = bytes;
-        });
-      }
-    } on PlatformException {
-      if (mounted) _showMessage('تعذر فتح معرض الصور لاختيار الإيصال.');
-    }
-  }
-
-  double get _bookingSubtotal {
-    final slot = _selectedSlot;
-    if (slot == null) return 0;
-    final hourlyRate =
-        widget.field.pricePerHour + (widget.coach?.pricePerHour ?? 0);
-    return hourlyRate * slot.duration.inMinutes / 60;
-  }
-
-  double get _discountAmount {
-    return _bookingSubtotal - _bookingTotal;
-  }
-
-  double get _bookingTotal {
-    final percent = _appliedPromo?.discountPercent ?? 0;
-    return (_bookingSubtotal * (100 - percent) / 100 * 100).round() / 100;
-  }
-
-  String _formatTime(DateTime time) {
-    final local = timezone.TZDateTime.from(time, _damascus);
-    return '${local.hour.toString().padLeft(2, '0')}:'
-        '${local.minute.toString().padLeft(2, '0')}';
-  }
-
-  String _formatDate(DateTime date) {
-    final local = timezone.TZDateTime.from(date, _damascus);
-    return '${local.year.toString().padLeft(4, '0')}/'
-        '${local.month.toString().padLeft(2, '0')}/'
-        '${local.day.toString().padLeft(2, '0')}';
   }
 
   void _showMessage(String message) {
@@ -301,56 +154,42 @@ class _BookingScreenState extends ConsumerState<BookingScreen> {
       ..showSnackBar(glassSnackBar(content: Text(message)));
   }
 
+  bool _isSameDay(DateTime d1, DateTime d2) {
+    return d1.year == d2.year && d1.month == d2.month && d1.day == d2.day;
+  }
+
+  String _formatDate(DateTime date) {
+    final local = timezone.TZDateTime.from(date, _damascus);
+    return '${local.year}/${local.month}/${local.day}';
+  }
+
   @override
   Widget build(BuildContext context) {
-    final bookingsStream = FirebaseFirestore.instance
+    // جلب أقفال الحجوزات لهذا الملعب
+    final locksStream = FirebaseFirestore.instance
         .collection('booking_locks')
         .where('fieldId', isEqualTo: widget.field.fieldId)
         .snapshots();
 
     return Scaffold(
       appBar: AppBar(title: const Text('اختيار موعد الحجز')),
-      body: ResponsiveContent(
-        maxWidth: 900,
-        padding: EdgeInsets.zero,
-        child: StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
-          stream: bookingsStream,
-          builder: (context, snapshot) {
-            if (snapshot.hasError) {
-              return Center(
-                child: Padding(
-                  padding: const EdgeInsets.all(24),
-                  child: Text(
-                    _readError(snapshot.error),
-                    textAlign: TextAlign.center,
-                  ),
-                ),
-              );
-            }
-            if (snapshot.connectionState == ConnectionState.waiting) {
-              return const Center(child: CircularProgressIndicator());
-            }
+      body: StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
+        stream: locksStream,
+        builder: (context, snapshot) {
+          if (snapshot.hasError) {
+            return Center(child: Text('تعذر تحميل المواعيد: ${snapshot.error}'));
+          }
+          if (snapshot.connectionState == ConnectionState.waiting) {
+            return const Center(child: CircularProgressIndicator());
+          }
 
-            final List<BookingModel> bookings;
-            try {
-              bookings = _bookingsFromLocks(snapshot.data?.docs ?? []);
-            } on FormatException {
-              return const Center(
-                child: Text('توجد بيانات موعد غير صالحة لهذا الملعب.'),
-              );
-            } on TypeError {
-              return const Center(
-                child: Text('توجد بيانات موعد غير مكتملة لهذا الملعب.'),
-              );
-            } on ArgumentError {
-              return const Center(
-                child: Text('توجد حالة موعد غير معروفة لهذا الملعب.'),
-              );
-            }
+          // استخراج الحجوزات من الأقفال
+          final bookings = _extractBookings(snapshot.data?.docs ?? []);
 
-            final total = _selectedSlot == null ? null : _bookingTotal;
-
-            return ListView(
+          return ResponsiveContent(
+            maxWidth: 900,
+            padding: EdgeInsets.zero,
+            child: ListView(
               padding: const EdgeInsets.all(20),
               children: [
                 Card(
@@ -359,114 +198,78 @@ class _BookingScreenState extends ConsumerState<BookingScreen> {
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        Text(
-                          widget.field.name,
-                          style: Theme.of(context).textTheme.titleLarge,
+                        Text('اختر اليوم',
+                            style: Theme.of(context).textTheme.titleMedium),
+                        const SizedBox(height: 12),
+                        Row(
+                          children: [
+                            Expanded(
+                              child: ChoiceChip(
+                                label: const Text('اليوم'),
+                                selected: _isSameDay(
+                                    _selectedDay, DateTime.now()),
+                                onSelected: (_) =>
+                                    _onDayChanged(DateTime.now()),
+                              ),
+                            ),
+                            const SizedBox(width: 8),
+                            Expanded(
+                              child: ChoiceChip(
+                                label: const Text('غداً'),
+                                selected: _isSameDay(
+                                    _selectedDay,
+                                    DateTime.now()
+                                        .add(const Duration(days: 1))),
+                                onSelected: (_) => _onDayChanged(
+                                    DateTime.now()
+                                        .add(const Duration(days: 1))),
+                              ),
+                            ),
+                            const SizedBox(width: 8),
+                            Expanded(
+                              child: ActionChip(
+                                avatar:
+                                    const Icon(Icons.calendar_month, size: 18),
+                                label: const Text('تاريخ آخر'),
+                                onPressed: () async {
+                                  final picked = await showDatePicker(
+                                    context: context,
+                                    initialDate: _selectedDay,
+                                    firstDate: DateTime.now(),
+                                    lastDate: DateTime.now()
+                                        .add(const Duration(days: 365)),
+                                  );
+                                  if (picked != null) _onDayChanged(picked);
+                                },
+                              ),
+                            ),
+                          ],
                         ),
-                        const SizedBox(height: 6),
+                        const SizedBox(height: 8),
                         Text(
-                          '${widget.field.governorate} - ${widget.field.district}',
+                          'التاريخ المحدد: ${_formatDate(_selectedDay)}',
+                          style: TextStyle(
+                              color: Theme.of(context).colorScheme.primary,
+                              fontWeight: FontWeight.bold),
                         ),
-                        const SizedBox(height: 6),
-                        Text(
-                          '${widget.field.pricePerHour.toStringAsFixed(2)} USD / ساعة',
-                        ),
-                        if (widget.coach != null) ...[
-                          const SizedBox(height: 6),
-                          Text(
-                            'التدريب مع ${widget.coach!.name}: '
-                            '${widget.coach!.pricePerHour.toStringAsFixed(2)} USD / ساعة',
-                          ),
-                        ],
                       ],
                     ),
                   ),
                 ),
-                if (widget.coach != null) ...[
-                  const SizedBox(height: 12),
-                  Card(
-                    child: Padding(
-                      padding: const EdgeInsets.all(16),
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.stretch,
-                        children: [
-                          Text(
-                            'بيانات جلسة التدريب',
-                            style: Theme.of(context).textTheme.titleMedium,
-                          ),
-                          const SizedBox(height: 8),
-                          const Text(
-                            'أدخل الاسم الأول للطفل فقط. ستُرسل هذه البيانات لصاحب الملعب لإتمام الجلسة.',
-                          ),
-                          const SizedBox(height: 8),
-                          TextField(
-                            controller: _childNameController,
-                            enabled: !_isSubmitting,
-                            maxLength: 60,
-                            textCapitalization: TextCapitalization.words,
-                            decoration: const InputDecoration(
-                              labelText: 'الاسم الأول للطفل',
-                              prefixIcon: Icon(Icons.child_care_outlined),
-                              counterText: '',
-                            ),
-                          ),
-                          const SizedBox(height: 8),
-                          TextField(
-                            controller: _childAgeController,
-                            enabled: !_isSubmitting,
-                            keyboardType: TextInputType.number,
-                            inputFormatters: [
-                              FilteringTextInputFormatter.digitsOnly,
-                              LengthLimitingTextInputFormatter(2),
-                            ],
-                            decoration: const InputDecoration(
-                              labelText: 'العمر (3–17 سنة)',
-                              prefixIcon: Icon(Icons.cake_outlined),
-                            ),
-                          ),
-                        ],
-                      ),
-                    ),
-                  ),
-                ],
                 const SizedBox(height: 20),
-                Text(
-                  'اختر موعداً متاحاً',
-                  style: Theme.of(context).textTheme.titleLarge,
-                ),
+                Text('اختر الوقت',
+                    style: Theme.of(context).textTheme.titleLarge),
                 const SizedBox(height: 12),
                 BookingSlotPicker(
                   field: widget.field,
                   bookings: bookings,
+                 selectedDay: _selectedDay, // نمرر اليوم المختار هنا
                   onSlotSelected: (slot) =>
                       setState(() => _selectedSlot = slot),
                 ),
-                if (_selectedSlot != null && total != null) ...[
-                  Card(
-                    child: BookingWeatherAlert(
-                      field: widget.field,
-                      startAt: _selectedSlot!.start,
-                    ),
-                  ),
-                  const SizedBox(height: 20),
-                  Card(
-                    child: ListTile(
-                      leading: const Icon(Icons.receipt_outlined),
-                      title: Text(
-                        '${_formatDate(_selectedSlot!.start)} — '
-                        '${_formatTime(_selectedSlot!.start)} إلى '
-                        '${_formatTime(_selectedSlot!.end)}',
-                      ),
-                      subtitle: Text(
-                        _appliedPromo == null
-                            ? 'الإجمالي: ${total.toStringAsFixed(2)} USD'
-                            : 'قبل الخصم: ${_bookingSubtotal.toStringAsFixed(2)} USD'
-                                '\nخصم ${_appliedPromo!.discountPercent}% '
-                                '(${_discountAmount.toStringAsFixed(2)} USD)'
-                                '\nالإجمالي: ${total.toStringAsFixed(2)} USD',
-                      ),
-                    ),
-                  ),
+                const SizedBox(height: 20),
+                if (_selectedSlot != null) ...[
+                  // كارت الخصم والعربون (بشكل مبسط)
                   Card(
                     child: Padding(
                       padding: const EdgeInsets.all(14),
@@ -475,201 +278,39 @@ class _BookingScreenState extends ConsumerState<BookingScreen> {
                         children: [
                           TextField(
                             controller: _promoController,
-                            enabled: !_isSubmitting && !_isCheckingPromo,
-                            textCapitalization: TextCapitalization.characters,
-                            textDirection: TextDirection.ltr,
-                            maxLength: 20,
                             decoration: InputDecoration(
                               labelText: 'كود الخصم',
-                              hintText: 'FOOTBALL10',
-                              counterText: '',
-                              prefixIcon:
-                                  const Icon(Icons.local_offer_outlined),
-                              suffixIcon: _appliedPromo == null
-                                  ? null
-                                  : IconButton(
-                                      tooltip: 'إزالة كود الخصم',
-                                      onPressed: _isSubmitting
-                                          ? null
-                                          : () => setState(() {
-                                                _appliedPromo = null;
-                                                _promoController.clear();
-                                              }),
-                                      icon: const Icon(Icons.close),
-                                    ),
-                            ),
-                            onChanged: (_) {
-                              if (_appliedPromo != null) {
-                                setState(() => _appliedPromo = null);
-                              }
-                            },
-                          ),
-                          const SizedBox(height: 8),
-                          OutlinedButton.icon(
-                            onPressed: _isSubmitting || _isCheckingPromo
-                                ? null
-                                : _appliedPromo != null
+                              suffixIcon: IconButton(
+                                icon: const Icon(Icons.check),
+                                onPressed: _isCheckingPromo
                                     ? null
                                     : _applyPromoCode,
-                            icon: _isCheckingPromo
-                                ? const SizedBox(
-                                    width: 18,
-                                    height: 18,
-                                    child: CircularProgressIndicator(
-                                      strokeWidth: 2,
-                                    ),
-                                  )
-                                : Icon(
-                                    _appliedPromo == null
-                                        ? Icons.check_circle_outline
-                                        : Icons.verified_outlined,
-                                  ),
-                            label: Text(
-                              _appliedPromo == null
-                                  ? 'تطبيق كود الخصم'
-                                  : 'تم تطبيق ${_appliedPromo!.discountPercent}% خصم',
+                              ),
                             ),
+                          ),
+                          SwitchListTile(
+                            title: const Text('دفع عربون لتأكيد الحجز'),
+                            value: _depositRequired,
+                            onChanged: (val) =>
+                                setState(() => _depositRequired = val),
                           ),
                         ],
                       ),
                     ),
                   ),
-                  Card(
-                    child: Column(
-                      children: [
-                        SwitchListTile(
-                          value: _depositRequired,
-                          onChanged: _isSubmitting
-                              ? null
-                              : (value) => setState(() {
-                                    _depositRequired = value;
-                                    _cashPaymentConfirmed = false;
-                                    _depositReceipt = null;
-                                    _depositReceiptBytes = null;
-                                  }),
-                          title: const Text('دفع عربون لتأكيد الحجز'),
-                          subtitle: Text(
-                            'عربون 20%: ${(total * 0.2).toStringAsFixed(2)} USD',
-                          ),
-                          secondary: const Icon(Icons.verified_user_outlined),
-                        ),
-                        if (_depositRequired) ...[
-                          const Divider(height: 1),
-                          Padding(
-                            padding: const EdgeInsets.all(16),
-                            child: Column(
-                              crossAxisAlignment: CrossAxisAlignment.stretch,
-                              children: [
-                                const Text(
-                                  'اختر طريقة دفع العربون. لا تتم أي عملية دفع إلكترونية داخل التطبيق.',
-                                ),
-                                const SizedBox(height: 12),
-                                DropdownButtonFormField<String>(
-                                  value: _depositMethod,
-                                  decoration: const InputDecoration(
-                                    labelText: 'طريقة الدفع',
-                                    prefixIcon: Icon(Icons.payments_outlined),
-                                  ),
-                                  items: const [
-                                    DropdownMenuItem(
-                                      value: 'cash',
-                                      child: Text('نقداً لصاحب الملعب'),
-                                    ),
-                                    DropdownMenuItem(
-                                      value: 'sham_cash',
-                                      child: Text('شام كاش'),
-                                    ),
-                                    DropdownMenuItem(
-                                      value: 'syriatel_cash',
-                                      child: Text('سيرياتيل كاش'),
-                                    ),
-                                  ],
-                                  onChanged: _isSubmitting
-                                      ? null
-                                      : (value) {
-                                          if (value == null) return;
-                                          setState(() {
-                                            _depositMethod = value;
-                                            _cashPaymentConfirmed = false;
-                                            _depositReceipt = null;
-                                            _depositReceiptBytes = null;
-                                          });
-                                        },
-                                ),
-                                const SizedBox(height: 8),
-                                if (_depositMethod == 'cash')
-                                  CheckboxListTile(
-                                    contentPadding: EdgeInsets.zero,
-                                    value: _cashPaymentConfirmed,
-                                    onChanged: _isSubmitting
-                                        ? null
-                                        : (value) => setState(
-                                              () => _cashPaymentConfirmed =
-                                                  value ?? false,
-                                            ),
-                                    title: const Text(
-                                      'أؤكد تسليم العربون نقداً لصاحب الملعب.',
-                                    ),
-                                    controlAffinity:
-                                        ListTileControlAffinity.leading,
-                                  )
-                                else ...[
-                                  const Text(
-                                    'تواصل مع صاحب الملعب لمعرفة تفاصيل التحويل، ثم ارفع صورة الإشعار.',
-                                  ),
-                                  const SizedBox(height: 8),
-                                  OutlinedButton.icon(
-                                    onPressed: _isSubmitting
-                                        ? null
-                                        : _pickDepositReceipt,
-                                    icon:
-                                        const Icon(Icons.upload_file_outlined),
-                                    label: Text(
-                                      _depositReceipt == null
-                                          ? 'اختيار صورة الإشعار'
-                                          : 'تغيير صورة الإشعار',
-                                    ),
-                                  ),
-                                  if (_depositReceiptBytes != null) ...[
-                                    const SizedBox(height: 8),
-                                    ClipRRect(
-                                      borderRadius: BorderRadius.circular(8),
-                                      child: Image.memory(
-                                        _depositReceiptBytes!,
-                                        height: 150,
-                                        fit: BoxFit.cover,
-                                      ),
-                                    ),
-                                  ],
-                                ],
-                              ],
-                            ),
-                          ),
-                        ],
-                      ],
-                    ),
-                  ),
                 ],
               ],
-            );
-          },
-        ),
+            ),
+          );
+        },
       ),
       bottomNavigationBar: SafeArea(
         minimum: const EdgeInsets.all(16),
         child: FilledButton.icon(
-          onPressed: _isSubmitting || _selectedSlot == null
-              ? null
-              : () {
-                  HapticFeedback.lightImpact(); // إضافة الاهتزاز عند الضغط على الزر
-                  _submit();
-                },
+          onPressed: _isSubmitting || _selectedSlot == null ? null : _submit,
           icon: _isSubmitting
               ? const SizedBox(
-                  width: 20,
-                  height: 20,
-                  child: CircularProgressIndicator(strokeWidth: 2),
-                )
+                  width: 20, height: 20, child: CircularProgressIndicator(strokeWidth: 2))
               : const Icon(Icons.check_circle_outline),
           label: const Text('إرسال طلب الحجز'),
         ),
@@ -677,62 +318,32 @@ class _BookingScreenState extends ConsumerState<BookingScreen> {
     );
   }
 
-  String _readError(Object? error) {
-    if (error is FirebaseException) {
-      return switch (error.code) {
-        'permission-denied' => 'ليست لديك صلاحية عرض المواعيد المتاحة.',
-        'unavailable' => 'الخدمة غير متاحة حالياً. تحقق من اتصالك.',
-        'failed-precondition' =>
-          'تعذر تحميل الحجوزات؛ قد يتطلب الأمر إنشاء فهرس Firestore.',
-        _ => 'تعذر تحميل المواعيد. يرجى المحاولة مجدداً.',
-      };
-    }
-    return 'تعذر تحميل المواعيد. يرجى المحاولة مجدداً.';
-  }
-
-  List<BookingModel> _bookingsFromLocks(
-    List<QueryDocumentSnapshot<Map<String, dynamic>>> documents,
-  ) {
+  List<BookingModel> _extractBookings(
+      List<QueryDocumentSnapshot<Map<String, dynamic>>> documents) {
     final bookings = <BookingModel>[];
-    for (final document in documents) {
-      final lockData = document.data();
-      final fieldId = lockData['fieldId'];
-      final ownerId = lockData['ownerId'];
-      final rawReservations = lockData['reservations'];
-      if (fieldId is! String || ownerId is! String || rawReservations is! Map) {
-        throw const FormatException('قفل مواعيد الملعب غير صالح.');
-      }
-
-      for (final rawReservation in rawReservations.values) {
-        if (rawReservation is! Map) {
-          throw const FormatException('بيانات الموعد المحجوز غير صالحة.');
-        }
-        final reservation = Map<String, dynamic>.from(rawReservation);
-        final bookingId = reservation['bookingId'];
-        final startAt = reservation['startAt'];
-        final endAt = reservation['endAt'];
-        final statusValue = reservation['status'];
-        if (bookingId is! String ||
-            startAt is! Timestamp ||
-            endAt is! Timestamp ||
-            statusValue is! String) {
-          throw const FormatException('بيانات الموعد المحجوز غير مكتملة.');
-        }
-
-        bookings.add(
-          BookingModel(
-            bookingId: bookingId,
-            fieldId: fieldId,
-            ownerId: ownerId,
+    for (final doc in documents) {
+      final data = doc.data();
+      final reservations = data['reservations'] as Map<String, dynamic>?;
+      if (reservations == null) continue;
+      for (final r in reservations.values) {
+        if (r is! Map<String, dynamic>) continue;
+        final start = r['startAt'] as Timestamp?;
+        final end = r['endAt'] as Timestamp?;
+        final status = r['status'] as String?;
+        if (start != null && end != null && status != 'cancelled') {
+          bookings.add(BookingModel(
+            bookingId: r['bookingId'] ?? '',
+            fieldId: widget.field.fieldId,
+            ownerId: widget.field.ownerId,
             customerId: '',
             customerName: '',
-            startAt: startAt.toDate(),
-            endAt: endAt.toDate(),
-            status: BookingStatus.values.byName(statusValue),
+            startAt: start.toDate(),
+            endAt: end.toDate(),
+            status: BookingStatus.values.firstWhere((e) => e.name == status, orElse: () => BookingStatus.pending),
             totalPrice: 0,
-            createdAt: startAt.toDate(),
-          ),
-        );
+            createdAt: start.toDate(),
+          ));
+        }
       }
     }
     return bookings;

@@ -73,6 +73,42 @@ class _MyBookingsScreenState extends ConsumerState<MyBookingsScreen> {
     return 'تعذر تحميل حجوزاتك. يرجى المحاولة مجدداً.';
   }
 
+  Future<void> _signOut() async {
+    try {
+      await ref.read(authServiceProvider).signOut();
+    } on AuthServiceException catch (error) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          glassSnackBar(content: Text(error.message)),
+        );
+      }
+    }
+  }
+
+  Future<void> _confirmSignOut() async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        title: const Text('تسجيل الخروج'),
+        content: const Text('هل تريد تسجيل الخروج بالفعل؟'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(dialogContext).pop(false),
+            child: const Text('لا'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.of(dialogContext).pop(true),
+            child: const Text('نعم'),
+          ),
+        ],
+      ),
+    );
+
+    if (confirmed == true) {
+      await _signOut();
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     final bookingsStream = FirebaseFirestore.instance
@@ -99,17 +135,8 @@ class _MyBookingsScreenState extends ConsumerState<MyBookingsScreen> {
       actions: [
         IconButton(
           tooltip: 'تسجيل الخروج',
-          onPressed: () async {
-            try {
-              await ref.read(authServiceProvider).signOut();
-            } on AuthServiceException catch (error) {
-              if (context.mounted) {
-                ScaffoldMessenger.of(context).showSnackBar(
-                  glassSnackBar(content: Text(error.message)),
-                );
-              }
-            }
-          },
+          // تم ربط الزر بدالة التأكيد
+          onPressed: _confirmSignOut,
           icon: const Icon(Icons.logout),
         ),
       ],

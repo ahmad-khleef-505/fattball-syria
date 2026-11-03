@@ -1,10 +1,11 @@
+import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:fattball/core/constants.dart';
 import 'package:fattball/models/user_model.dart';
 import 'package:fattball/providers/auth_provider.dart';
-import 'package:fattball/services/admin_service.dart';
 import 'package:fattball/widgets/responsive_scaffold.dart';
 import 'package:fattball/widgets/glass_snack_bar.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:timezone/data/latest.dart' as timezone_data;
 import 'package:timezone/timezone.dart' as timezone;
@@ -45,17 +46,65 @@ class _ActivateSubscriptionScreenState
   }
 
   Future<void> _activate() async {
+    HapticFeedback.mediumImpact();
     setState(() => _isSubmitting = true);
     try {
-      final result = await ref.read(adminServiceProvider).activateSubscription(
-            ownerId: widget.owner.uid,
-            durationDays: _durationDays,
-          );
+      final firestore = FirebaseFirestore.instance;
+      final now = DateTime.now();
+
+      final userDoc = await firestore.collection('users').doc(widget.owner.uid).get();
+      final currentExpiry = userDoc.data()?['subscriptionExpiry'] as Timestamp?;
+
+      DateTime baseDate = now;
+      if (currentExpiry != null && currentExpiry.toDate().isAfter(now)) {
+        baseDate = currentExpiry.toDate(); 
+      }
+      
+      // هنا يتم حساب الوقت بدقة (السنة، الشهر، اليوم، الساعة، الدقيقة)
+      final newExpiry = baseDate.add(Duration(days: _durationDays));
+
+      await firestore.collection('users').doc(widget.owner.uid).update({
+        'isActive': true,
+        'subscriptionExpiry': Timestamp.fromDate(newExpiry),
+      });
+
+      final fieldsSnapshot = await firestore
+          .collection('fields')
+          .where('ownerId', isEqualTo: widget.owner.uid)
+          .get();
+
+      final batch = firestore.batch();
+      for (var doc in fieldsSnapshot.docs) {
+        batch.update(doc.reference, {
+          'isActive': true,
+          'ownerSubscriptionExpiry': Timestamp.fromDate(newExpiry),
+        });
+      }
+      await batch.commit();
+
+      final adminUid = ref.read(authStateProvider).value?.uid;
+      await firestore.collection('admin_logs').add({
+        'adminUid': adminUid,
+        'action': 'تفعيل اشتراك يدوي',
+        'targetUid': widget.owner.uid,
+        'durationDays': _durationDays,
+        'newExpiry': Timestamp.fromDate(newExpiry),
+        'createdAt': Timestamp.fromDate(now),
+      });
+
       if (!mounted) return;
-      setState(() => _lastExpiry = result['expiresAt'] as String);
-      _showMessage('تم تفعيل الاشتراك وتسجيل العملية في سجل الإدارة.');
-    } on AdminServiceException catch (error) {
-      if (mounted) _showMessage(error.message);
+      
+      setState(() {
+        _lastExpiry = newExpiry.toIso8601String();
+      });
+      _showMessage('تم تفعيل الاشتراك بنجاح حتى ${_formatExpiry(_lastExpiry!)}');
+      
+    } on FirebaseException catch (error) {
+      if (mounted) {
+        _showMessage(error.code == 'permission-denied'
+            ? 'ليست لديك صلاحية لتفعيل الاشتراك.'
+            : 'تعذر تفعيل الاشتراك. تحقق من الاتصال.');
+      }
     } finally {
       if (mounted) setState(() => _isSubmitting = false);
     }
@@ -80,17 +129,14 @@ class _ActivateSubscriptionScreenState
           children: [
             Card(
               child: ListTile(
-                leading: const CircleAvatar(
-                  child: Icon(Icons.storefront_outlined),
-                ),
+                leading: const CircleAvatar(child: Icon(Icons.storefront_outlined)),
                 title: Text(widget.owner.name),
-                subtitle: Text(
-                  widget.owner.email,
-                  textDirection: TextDirection.ltr,
-                ),
+                subtitle: Text(widget.owner.email, textDirection: TextDirection.ltr),
               ),
             ),
             const SizedBox(height: 20),
+            
+            // القائمة المنسدلة للمدد الخمسة
             DropdownButtonFormField<int>(
               value: _durationDays,
               decoration: const InputDecoration(
@@ -98,9 +144,11 @@ class _ActivateSubscriptionScreenState
                 prefixIcon: Icon(Icons.calendar_month_outlined),
               ),
               items: const [
-                DropdownMenuItem(value: 30, child: Text('شهر واحد — 30 يوماً')),
-                DropdownMenuItem(value: 60, child: Text('شهران — 60 يوماً')),
-                DropdownMenuItem(value: 90, child: Text('3 أشهر — 90 يوماً')),
+                DropdownMenuItem(value: 30, child: Text('شهر واحد (30 يوماً)')),
+                DropdownMenuItem(value: 60, child: Text('شهرين (60 يوماً)')),
+                DropdownMenuItem(value: 90, child: Text('3 أشهر (90 يوماً)')),
+                DropdownMenuItem(value: 180, child: Text('6 أشهر (180 يوماً)')),
+                DropdownMenuItem(value: 365, child: Text('سنة كاملة (365 يوماً)')),
               ],
               onChanged: _isSubmitting
                   ? null
@@ -108,23 +156,23 @@ class _ActivateSubscriptionScreenState
                       if (value != null) setState(() => _durationDays = value);
                     },
             ),
+            
             const SizedBox(height: 16),
             Card(
               child: ListTile(
                 leading: const Icon(Icons.payments_outlined),
                 title: Text('القيمة: ${amount.toStringAsFixed(0)} USD'),
-                subtitle: const Text(
-                  'هذا تفعيل إداري يدوي، ولا يمثل عملية دفع إلكترونية.',
-                ),
+                subtitle: const Text('هذا تفعيل إداري يدوي، ولا يمثل عملية دفع إلكترونية.'),
               ),
             ),
             if (_lastExpiry != null) ...[
               const SizedBox(height: 12),
               Card(
+                color: Colors.green.withOpacity(0.1),
                 child: ListTile(
-                  leading: const Icon(Icons.verified_outlined),
+                  leading: const Icon(Icons.verified_outlined, color: Colors.green),
                   title: const Text('انتهاء الاشتراك الجديد'),
-                  subtitle: Text(_formatExpiry(_lastExpiry!)),
+                  subtitle: Text(_formatExpiry(_lastExpiry!), style: const TextStyle(fontWeight: FontWeight.bold)),
                 ),
               ),
             ],
@@ -132,15 +180,9 @@ class _ActivateSubscriptionScreenState
             FilledButton.icon(
               onPressed: _isSubmitting ? null : _activate,
               icon: _isSubmitting
-                  ? const SizedBox(
-                      width: 20,
-                      height: 20,
-                      child: CircularProgressIndicator(strokeWidth: 2),
-                    )
+                  ? const SizedBox(width: 20, height: 20, child: CircularProgressIndicator(strokeWidth: 2))
                   : const Icon(Icons.check_circle_outline),
-              label: Text(
-                _isSubmitting ? 'جارٍ التفعيل...' : 'تفعيل / تمديد الاشتراك',
-              ),
+              label: Text(_isSubmitting ? 'جارٍ التفعيل...' : 'تفعيل / تمديد الاشتراك'),
             ),
           ],
         ),

@@ -21,12 +21,14 @@ import 'package:fattball/widgets/sports_loading.dart';
 import 'package:fattball/widgets/glass_snack_bar.dart';
 import 'package:fattball/widgets/sports_map_layers.dart';
 import 'package:fattball/widgets/weather_widgets.dart';
+import 'package:fattball/widgets/welcome_dialog.dart'; // <-- استيراد النافذة الترحيبية
 import 'package:flutter/material.dart';
 import 'package:flutter_animate/flutter_animate.dart';
 import 'package:flutter_map/flutter_map.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter/services.dart';
 import 'package:latlong2/latlong.dart';
+import 'package:shared_preferences/shared_preferences.dart'; // <-- لضمان ظهورها مرة واحدة
 
 class HomeMap extends ConsumerStatefulWidget {
   const HomeMap({super.key, required this.user});
@@ -61,6 +63,7 @@ class _HomeMapState extends ConsumerState<HomeMap>
       duration: const Duration(milliseconds: 1100),
     )..repeat(reverse: true);
     _loadLocations();
+    _checkAndShowWelcomeDialog(); // <-- استدعاء النافذة الترحيبية
   }
 
   @override
@@ -68,6 +71,28 @@ class _HomeMapState extends ConsumerState<HomeMap>
     _pulseController.dispose();
     _circleHitNotifier.dispose();
     super.dispose();
+  }
+
+  // دالة عرض النافذة الترحيبية (تظهر مرة واحدة فقط لكل مستخدم)
+  Future<void> _checkAndShowWelcomeDialog() async {
+    final prefs = await SharedPreferences.getInstance();
+    // نستخدم معرف المستخدم لضمان عدم ظهورها له مرة أخرى
+    bool hasSeenWelcome = prefs.getBool('hasSeenWelcome_${widget.user.uid}') ?? false;
+
+    if (!hasSeenWelcome && mounted) {
+      // تأخير بسيط لضمان تحميل الشاشة الرئيسية أولاً
+      Future.delayed(const Duration(milliseconds: 800), () async {
+        if (mounted) {
+          await showDialog(
+            context: context,
+            barrierDismissible: false, // يمنع إغلاقها بالضغط خارجها
+            builder: (context) => const WelcomeDialog(),
+          );
+          // حفظ أنها ظهرت لهذا المستخدم
+          await prefs.setBool('hasSeenWelcome_${widget.user.uid}', true);
+        }
+      });
+    }
   }
 
   Future<void> _loadLocations() async {
@@ -206,6 +231,31 @@ class _HomeMapState extends ConsumerState<HomeMap>
     );
   }
 
+  // دالة تأكيد تسجيل الخروج
+  Future<void> _confirmSignOut() async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        title: const Text('تسجيل الخروج'),
+        content: const Text('هل تريد تسجيل الخروج بالفعل؟'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(dialogContext).pop(false),
+            child: const Text('لا'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.of(dialogContext).pop(true),
+            child: const Text('نعم'),
+          ),
+        ],
+      ),
+    );
+
+    if (confirmed == true) {
+      await _signOut();
+    }
+  }
+
   Future<void> _signOut() async {
     try {
       await ref.read(authServiceProvider).signOut();
@@ -323,7 +373,7 @@ class _HomeMapState extends ConsumerState<HomeMap>
       actions: [
         IconButton(
           tooltip: 'تسجيل الخروج',
-          onPressed: _signOut,
+          onPressed: _confirmSignOut, // <-- تم ربطها بدالة التأكيد
           icon: const Icon(Icons.logout),
         ),
       ],
