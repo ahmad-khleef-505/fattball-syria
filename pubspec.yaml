@@ -9,27 +9,27 @@ environment:
 dependencies:
   flutter:
     sdk: flutter
-  audioplayers: ^6.5.1
+  audioplayers: ^6.1.0
   cupertino_icons: ^1.0.8
-  flutter_map: ^8.1.1
+  flutter_map: ^7.0.2
   latlong2: ^0.9.1
-  geolocator: ^14.0.2
-  firebase_core: ^3.13.0
-  firebase_auth: ^5.5.3
-  cloud_firestore: ^5.6.7
-  firebase_messaging: ^15.2.5
-  firebase_storage: ^12.4.5
+  geolocator: ^13.0.1
+  firebase_core: ^3.6.0
+  firebase_auth: ^5.3.1
+  cloud_firestore: ^5.4.4
+  firebase_messaging: ^15.1.3
+  firebase_storage: ^12.3.4
   flutter_riverpod: ^2.6.1
-  intl: ^0.20.2
-  timezone: ^0.10.0
-  image_picker: ^1.2.4
-  cloud_functions: ^5.6.2
-  google_fonts: ^8.2.1
+  intl: ^0.19.0
+  timezone: ^0.9.4
+  image_picker: ^1.1.2
+  cloud_functions: ^5.1.0
+  google_fonts: ^6.2.1
   shimmer: ^3.0.0
-  flutter_animate: ^4.5.2
-  url_launcher: ^6.3.3
-  fl_chart: ^1.3.0
-  http: ^1.4.0
+  flutter_animate: ^4.5.0
+  url_launcher: ^6.3.0
+  fl_chart: ^0.69.0
+  http: ^1.2.2
 
 dev_dependencies:
   flutter_test:
@@ -37,7 +37,7 @@ dev_dependencies:
   flutter_lints: ^5.0.0
   flutter_launcher_icons: ^0.14.4
 
-# هذا القسم هو الحل الذي يمنع تعارض vector_math
+# هذا القسم يمنع تعارض vector_math
 dependency_overrides:
   vector_math: ^2.2.0
 
