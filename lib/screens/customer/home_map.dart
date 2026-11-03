@@ -76,7 +76,8 @@ class _HomeMapState extends ConsumerState<HomeMap>
 
   Future<void> _checkAndShowWelcomeDialog() async {
     final prefs = await SharedPreferences.getInstance();
-    bool hasSeenWelcome = prefs.getBool('hasSeenWelcome_${widget.user.uid}') ?? false;
+    bool hasSeenWelcome =
+        prefs.getBool('hasSeenWelcome_${widget.user.uid}') ?? false;
 
     if (!hasSeenWelcome && mounted) {
       Future.delayed(const Duration(milliseconds: 800), () async {
@@ -94,14 +95,19 @@ class _HomeMapState extends ConsumerState<HomeMap>
 
   Future<void> _loadLocations() async {
     try {
-      final content = await rootBundle.loadString(AppConstants.locationsAssetPath);
+      final content =
+          await rootBundle.loadString(AppConstants.locationsAssetPath);
       final decoded = jsonDecode(content);
-      if (decoded is! Map<String, dynamic> || decoded['governorates'] is! List<dynamic>) {
+      if (decoded is! Map<String, dynamic> ||
+          decoded['governorates'] is! List<dynamic>) {
         throw const FormatException('تنسيق بيانات المحافظات غير صالح.');
       }
 
-      final governorates = (decoded['governorates'] as List<dynamic>).map((item) {
-        if (item is! Map<String, dynamic> || item['name'] is! String || item['districts'] is! List<dynamic>) {
+      final governorates =
+          (decoded['governorates'] as List<dynamic>).map((item) {
+        if (item is! Map<String, dynamic> ||
+            item['name'] is! String ||
+            item['districts'] is! List<dynamic>) {
           throw const FormatException('تعذر قراءة بيانات المحافظة.');
         }
         return {
@@ -116,7 +122,8 @@ class _HomeMapState extends ConsumerState<HomeMap>
       if (mounted) setState(() => _locationsError = error.message);
     } on FlutterError {
       if (mounted) {
-        setState(() => _locationsError = 'تعذر تحميل بيانات المحافظات من التطبيق.');
+        setState(
+            () => _locationsError = 'تعذر تحميل بيانات المحافظات من التطبيق.');
       }
     }
   }
@@ -196,13 +203,14 @@ class _HomeMapState extends ConsumerState<HomeMap>
       try {
         final field = FieldModel.fromMap(document.id, document.data());
         final subscriptionExpiry = field.ownerSubscriptionExpiry;
-        
+
         if (!field.isActive ||
             subscriptionExpiry == null ||
             !subscriptionExpiry.isAfter(DateTime.now())) {
           continue;
         }
-        if (_selectedGovernorate != null && field.governorate != _selectedGovernorate) {
+        if (_selectedGovernorate != null &&
+            field.governorate != _selectedGovernorate) {
           continue;
         }
         if (_selectedDistrict != null && field.district != _selectedDistrict) {
@@ -302,7 +310,6 @@ class _HomeMapState extends ConsumerState<HomeMap>
       ),
       body: Stack(
         children: [
-          // الخريطة كخلفية أساسية
           StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
             stream: fieldsStream,
             builder: (context, snapshot) {
@@ -324,7 +331,8 @@ class _HomeMapState extends ConsumerState<HomeMap>
                         field.geoPoint.longitude,
                       ),
                       radius: (8 + (_zoom - 5) * 1.35).clamp(7, 23).toDouble(),
-                      color: Theme.of(context).colorScheme.primary.withAlpha(220),
+                      color:
+                          Theme.of(context).colorScheme.primary.withAlpha(220),
                       borderColor: Colors.white,
                       borderStrokeWidth: 2,
                       hitValue: field.fieldId,
@@ -346,7 +354,8 @@ class _HomeMapState extends ConsumerState<HomeMap>
                           setState(() => _zoom = camera.zoom);
                         }
                       },
-                      onTap: (_, __) => setState(() => _selectedFieldId = null),
+                      onTap: (_, __) =>
+                          setState(() => _selectedFieldId = null),
                     ),
                     children: [
                       const SportsMapTileLayer(),
@@ -367,7 +376,8 @@ class _HomeMapState extends ConsumerState<HomeMap>
                         animation: _pulseController,
                         builder: (context, child) {
                           final pulse = _pulseController.value;
-                          final markerSize = (30 + (_zoom - 5) * 1.4).clamp(28, 48);
+                          final markerSize =
+                              (30 + (_zoom - 5) * 1.4).clamp(28, 48);
                           final haloCircles = fields
                               .map(
                                 (field) => CircleMarker<String>(
@@ -375,9 +385,15 @@ class _HomeMapState extends ConsumerState<HomeMap>
                                     field.geoPoint.latitude,
                                     field.geoPoint.longitude,
                                   ),
-                                  radius: (12 + (_zoom - 5) * 1.35).clamp(11, 27).toDouble(),
-                                  color: AppTheme.neonGreen.withValues(alpha: 0.08 + pulse * 0.12),
-                                  borderColor: AppTheme.neonGreen.withValues(alpha: 0.35 + pulse * 0.35),
+                                  radius: (12 + (_zoom - 5) * 1.35)
+                                      .clamp(11, 27)
+                                      .toDouble(),
+                                  color: AppTheme.neonGreen.withValues(
+                                    alpha: 0.08 + pulse * 0.12,
+                                  ),
+                                  borderColor: AppTheme.neonGreen.withValues(
+                                    alpha: 0.35 + pulse * 0.35,
+                                  ),
                                   borderStrokeWidth: 2 + pulse * 2,
                                 ),
                               )
@@ -402,7 +418,8 @@ class _HomeMapState extends ConsumerState<HomeMap>
                                           color: AppTheme.neonGreen,
                                           shadows: [
                                             Shadow(
-                                              color: AppTheme.neonGreen.withValues(alpha: 0.8),
+                                              color: AppTheme.neonGreen
+                                                  .withValues(alpha: 0.8),
                                               blurRadius: 10 + pulse * 8,
                                             ),
                                             const Shadow(
@@ -422,13 +439,15 @@ class _HomeMapState extends ConsumerState<HomeMap>
                       const SportsMapAttribution(),
                     ],
                   ),
-                  // زر تحديد الموقع الحالي (يطفو فوق الخريطة)
                   PositionedDirectional(
                     bottom: MediaQuery.of(context).padding.bottom + 100,
                     start: 16,
                     child: FloatingActionButton.small(
                       heroTag: 'customer-current-location',
-                      backgroundColor: Theme.of(context).colorScheme.surface.withOpacity(0.9),
+                      backgroundColor: Theme.of(context)
+                          .colorScheme
+                          .surface
+                          .withOpacity(0.9),
                       elevation: 4,
                       onPressed: _isLocating ? null : _useCurrentLocation,
                       tooltip: 'موقعي',
@@ -441,7 +460,6 @@ class _HomeMapState extends ConsumerState<HomeMap>
                           : const Icon(Icons.my_location),
                     ),
                   ),
-                  // بطاقة الملعب المنبثقة
                   if (selectedField != null)
                     PositionedDirectional(
                       start: 16,
@@ -457,8 +475,6 @@ class _HomeMapState extends ConsumerState<HomeMap>
               );
             },
           ),
-          
-          // الشريط العلوي الزجاجي (الفلاتر + الطقس)
           Positioned(
             top: 0,
             left: 0,
@@ -477,7 +493,6 @@ class _HomeMapState extends ConsumerState<HomeMap>
     );
   }
 
-  // تصميم الفلاتر بتأثير الزجاج (Glassmorphism)
   Widget _buildGlassFilters() {
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
@@ -506,7 +521,9 @@ class _HomeMapState extends ConsumerState<HomeMap>
                   child: _buildFilterButton(
                     label: _selectedDistrict ?? 'كل المناطق',
                     icon: Icons.location_city_outlined,
-                    onTap: _selectedGovernorate == null ? null : () => _showPremiumPicker(isGovernorate: false),
+                    onTap: _selectedGovernorate == null
+                        ? null
+                        : () => _showPremiumPicker(isGovernorate: false),
                   ),
                 ),
               ],
@@ -517,7 +534,8 @@ class _HomeMapState extends ConsumerState<HomeMap>
     );
   }
 
-  Widget _buildFilterButton({required String label, required IconData icon, VoidCallback? onTap}) {
+  Widget _buildFilterButton(
+      {required String label, required IconData icon, VoidCallback? onTap}) {
     final isActive = onTap != null;
     return InkWell(
       onTap: onTap,
@@ -527,7 +545,8 @@ class _HomeMapState extends ConsumerState<HomeMap>
         child: Row(
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
-            Icon(icon, size: 18, color: isActive ? Colors.white : Colors.white38),
+            Icon(icon,
+                size: 18, color: isActive ? Colors.white : Colors.white38),
             const SizedBox(width: 8),
             Expanded(
               child: Text(
@@ -542,7 +561,8 @@ class _HomeMapState extends ConsumerState<HomeMap>
                 ),
               ),
             ),
-            Icon(Icons.keyboard_arrow_down, size: 18, color: isActive ? Colors.white70 : Colors.white38),
+            Icon(Icons.keyboard_arrow_down,
+                size: 18, color: isActive ? Colors.white70 : Colors.white38),
           ],
         ),
       ),
@@ -554,6 +574,14 @@ class _HomeMapState extends ConsumerState<HomeMap>
       context: context,
       backgroundColor: Colors.transparent,
       builder: (context) {
+        // 1. تجهيز القائمة في متغير منفصل لتجنب خطأ الـ Object
+        List<Map<String, dynamic>> itemsToShow = [];
+        if (isGovernorate) {
+          itemsToShow = _governorates;
+        } else {
+          itemsToShow = _districts.map((d) => {'name': d}).toList();
+        }
+
         return Container(
           decoration: BoxDecoration(
             color: Theme.of(context).colorScheme.surface,
@@ -564,12 +592,18 @@ class _HomeMapState extends ConsumerState<HomeMap>
             children: [
               Container(
                 margin: const EdgeInsets.symmetric(vertical: 12),
-                width: 40, height: 4,
-                decoration: BoxDecoration(color: Colors.grey.shade400, borderRadius: BorderRadius.circular(2)),
+                width: 40,
+                height: 4,
+                decoration: BoxDecoration(
+                    color: Colors.grey.shade400,
+                    borderRadius: BorderRadius.circular(2)),
               ),
               Text(
                 isGovernorate ? 'اختر المحافظة' : 'اختر المنطقة',
-                style: Theme.of(context).textTheme.titleLarge?.copyWith(fontWeight: FontWeight.bold),
+                style: Theme.of(context)
+                    .textTheme
+                    .titleLarge
+                    ?.copyWith(fontWeight: FontWeight.bold),
               ),
               const SizedBox(height: 16),
               Flexible(
@@ -578,7 +612,9 @@ class _HomeMapState extends ConsumerState<HomeMap>
                   padding: const EdgeInsets.only(bottom: 24),
                   children: [
                     ListTile(
-                      title: Text(isGovernorate ? 'كل المحافظات' : 'كل المناطق', style: const TextStyle(fontWeight: FontWeight.bold)),
+                      title: Text(
+                          isGovernorate ? 'كل المحافظات' : 'كل المناطق',
+                          style: const TextStyle(fontWeight: FontWeight.bold)),
                       leading: const Icon(Icons.apps),
                       onTap: () {
                         setState(() {
@@ -594,17 +630,21 @@ class _HomeMapState extends ConsumerState<HomeMap>
                         Navigator.pop(context);
                       },
                     ),
-                    ...(isGovernorate ? _governorates : _districts.map((d) => {'name': d})).map((item) {
+                    ...itemsToShow.map((item) {
                       final name = item['name'] as String;
                       return ListTile(
                         title: Text(name),
-                        leading: Icon(isGovernorate ? Icons.location_on_outlined : Icons.pin_drop_outlined),
+                        leading: Icon(isGovernorate
+                            ? Icons.location_on_outlined
+                            : Icons.pin_drop_outlined),
                         onTap: () {
                           setState(() {
                             if (isGovernorate) {
                               _selectedGovernorate = name;
-                              final gov = _governorates.firstWhere((element) => element['name'] == name);
-                              _districts = List<String>.from(gov['districts'] as List);
+                              final gov = _governorates.firstWhere(
+                                  (element) => element['name'] == name);
+                              _districts =
+                                  List<String>.from(gov['districts'] as List);
                               _selectedDistrict = null;
                             } else {
                               _selectedDistrict = name;
@@ -625,7 +665,6 @@ class _HomeMapState extends ConsumerState<HomeMap>
     );
   }
 
-  // تصميم حالة الخطأ بشكل احترافي (Premium Error State)
   Widget _buildPremiumErrorState(Object? error) {
     return Center(
       child: Container(
@@ -634,7 +673,12 @@ class _HomeMapState extends ConsumerState<HomeMap>
         decoration: BoxDecoration(
           color: Theme.of(context).colorScheme.surface,
           borderRadius: BorderRadius.circular(24),
-          boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.1), blurRadius: 20, offset: const Offset(0, 10))],
+          boxShadow: [
+            BoxShadow(
+                color: Colors.black.withOpacity(0.1),
+                blurRadius: 20,
+                offset: const Offset(0, 10))
+          ],
         ),
         child: Column(
           mainAxisSize: MainAxisSize.min,
@@ -645,18 +689,24 @@ class _HomeMapState extends ConsumerState<HomeMap>
                 color: Theme.of(context).colorScheme.errorContainer,
                 shape: BoxShape.circle,
               ),
-              child: Icon(Icons.wifi_off_rounded, size: 48, color: Theme.of(context).colorScheme.error),
+              child: Icon(Icons.wifi_off_rounded,
+                  size: 48, color: Theme.of(context).colorScheme.error),
             ),
             const SizedBox(height: 24),
             Text(
               'عذراً، حدث خطأ',
-              style: Theme.of(context).textTheme.titleLarge?.copyWith(fontWeight: FontWeight.bold),
+              style: Theme.of(context)
+                  .textTheme
+                  .titleLarge
+                  ?.copyWith(fontWeight: FontWeight.bold),
             ),
             const SizedBox(height: 12),
             Text(
               _firestoreError(error),
               textAlign: TextAlign.center,
-              style: TextStyle(color: Theme.of(context).colorScheme.onSurfaceVariant, height: 1.5),
+              style: TextStyle(
+                  color: Theme.of(context).colorScheme.onSurfaceVariant,
+                  height: 1.5),
             ),
             const SizedBox(height: 24),
             SizedBox(
@@ -686,7 +736,8 @@ class _HomeMapState extends ConsumerState<HomeMap>
       return switch (error.code) {
         'permission-denied' => 'تعذر عرض الملاعب بسبب إعدادات الصلاحيات.',
         'unavailable' => 'الخدمة غير متاحة حالياً. تحقق من اتصالك.',
-        'failed-precondition' => 'تعذر تحميل الملاعب؛ قد يتطلب الأمر إنشاء فهرس Firestore.',
+        'failed-precondition' =>
+          'تعذر تحميل الملاعب؛ قد يتطلب الأمر إنشاء فهرس Firestore.',
         _ => 'تعذر تحميل الملاعب. يرجى المحاولة مجدداً.',
       };
     }
