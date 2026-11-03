@@ -1,0 +1,176 @@
+rules_version = '2';
+service firebase.storage {
+  match /b/{bucket}/o {
+    function signedIn() {
+      return request.auth != null;
+    }
+
+    function isSuperAdmin() {
+      return signedIn()
+        && request.auth.token.admin == true
+        && request.auth.token.superadmin == true;
+    }
+
+    function userData(uid) {
+      return firestore.get(
+        /databases/(default)/documents/users/$(uid)
+      ).data;
+    }
+
+    function activeOwner(uid) {
+      let owner = userData(uid);
+      return owner.role == 'owner'
+        && owner.isActive == true
+        && owner.subscriptionExpiry is timestamp
+        && owner.subscriptionExpiry > request.time;
+    }
+
+    function fieldData(fieldId) {
+      return firestore.get(
+        /databases/(default)/documents/fields/$(fieldId)
+      ).data;
+    }
+
+    function fieldIsPublished(fieldId) {
+      let field = fieldData(fieldId);
+      return field.isActive == true
+        && field.ownerSubscriptionExpiry is timestamp
+        && field.ownerSubscriptionExpiry > request.time;
+    }
+
+    function fieldBelongsToOwner(fieldId, ownerId) {
+      let path = /databases/(default)/documents/fields/$(fieldId);
+      return !firestore.exists(path)
+        || firestore.get(path).data.ownerId == ownerId;
+    }
+
+    function tournamentData(tournamentId) {
+      return firestore.get(
+        /databases/(default)/documents/tournaments/$(tournamentId)
+      ).data;
+    }
+
+    function tournamentBelongsToOwner(tournamentId, ownerId) {
+      return firestore.exists(
+          /databases/(default)/documents/tournaments/$(tournamentId)
+        )
+        && tournamentData(tournamentId).ownerId == ownerId;
+    }
+
+    function tournamentAcceptsRegistrations(tournamentId) {
+      let tournament = tournamentData(tournamentId);
+      return tournament.status == 'registration'
+        && tournament.registrationDeadline > request.time
+        && fieldIsPublished(tournament.fieldId);
+    }
+
+    function communityPostData(postId) {
+      return firestore.get(
+        /databases/(default)/documents/community_posts/$(postId)
+      ).data;
+    }
+
+    match /fields/{fieldId}/{fileName} {
+      allow read: if isSuperAdmin()
+        || (
+          firestore.exists(
+            /databases/(default)/documents/fields/$(fieldId)
+          )
+          && fieldIsPublished(fieldId)
+        )
+        || (
+          signedIn()
+          && firestore.exists(
+            /databases/(default)/documents/fields/$(fieldId)
+          )
+          && fieldData(fieldId).ownerId == request.auth.uid
+        );
+
+      allow create, update: if signedIn()
+        && request.resource != null
+        && request.resource.metadata.ownerId == request.auth.uid
+        && activeOwner(request.auth.uid)
+        && fieldBelongsToOwner(fieldId, request.auth.uid)
+        && request.resource.size <= 10 * 1024 * 1024
+        && request.resource.contentType.matches('image/.*');
+
+      allow delete: if signedIn()
+        && resource.metadata.ownerId == request.auth.uid
+        && fieldBelongsToOwner(fieldId, request.auth.uid);
+    }
+
+    match /deposit_receipts/{fieldId}/{customerId}/{fileName} {
+      allow read: if signedIn()
+        && (
+          isSuperAdmin()
+          || request.auth.uid == customerId
+          || (
+            firestore.exists(
+              /databases/(default)/documents/fields/$(fieldId)
+            )
+            && fieldData(fieldId).ownerId == request.auth.uid
+          )
+        );
+
+      allow create: if signedIn()
+        && request.auth.uid == customerId
+        && userData(customerId).role == 'customer'
+        && userData(customerId).isActive == true
+        && fieldIsPublished(fieldId)
+        && request.resource.metadata.customerId == customerId
+        && request.resource.metadata.fieldId == fieldId
+        && request.resource.size <= 5 * 1024 * 1024
+        && request.resource.contentType.matches('image/.*');
+
+      allow update: if false;
+
+      allow delete: if signedIn() && request.auth.uid == customerId;
+    }
+
+    match /tournament_receipts/{tournamentId}/{captainUid}/{fileName} {
+      allow read: if signedIn()
+        && (
+          isSuperAdmin()
+          || request.auth.uid == captainUid
+          || tournamentBelongsToOwner(tournamentId, request.auth.uid)
+        );
+
+      allow create: if signedIn()
+        && request.auth.uid == captainUid
+        && tournamentAcceptsRegistrations(tournamentId)
+        && request.resource.metadata.captainUid == captainUid
+        && request.resource.metadata.tournamentId == tournamentId
+        && request.resource.size <= 5 * 1024 * 1024
+        && request.resource.contentType.matches('image/.*');
+
+      allow update: if false;
+
+      allow delete: if signedIn() && request.auth.uid == captainUid;
+    }
+
+    match /community_posts/{postId}/{authorUid}/{fileName} {
+      allow read: if signedIn()
+        && firestore.exists(
+          /databases/(default)/documents/community_posts/$(postId)
+        );
+
+      allow create: if signedIn()
+        && request.auth.uid == authorUid
+        && userData(authorUid).isActive == true
+        && userData(authorUid).role in ['customer', 'owner']
+        && firestore.exists(
+          /databases/(default)/documents/community_posts/$(postId)
+        )
+        && communityPostData(postId).authorUid == authorUid
+        && communityPostData(postId).imageUrl == null
+        && request.resource.metadata.authorUid == authorUid
+        && request.resource.metadata.postId == postId
+        && request.resource.size <= 5 * 1024 * 1024
+        && request.resource.contentType.matches('image/.*');
+
+      allow update: if false;
+
+      allow delete: if signedIn() && request.auth.uid == authorUid;
+    }
+  }
+}

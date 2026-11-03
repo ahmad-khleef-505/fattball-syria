@@ -1,0 +1,1082 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    function signedIn() {
+      return request.auth != null;
+    }
+
+    function isSuperAdmin() {
+      return signedIn()
+        && request.auth.token.get('admin', false) == true
+        && request.auth.token.get('superadmin', false) == true;
+    }
+
+    function userPath(uid) {
+      return /databases/$(database)/documents/users/$(uid);
+    }
+
+    function fieldPath(fieldId) {
+      return /databases/$(database)/documents/fields/$(fieldId);
+    }
+
+    function promoCodePath(fieldId, code) {
+      return /databases/$(database)/documents/fields/$(fieldId)/promo_codes/$(code);
+    }
+
+    function coachPath(fieldId, coachId) {
+      return /databases/$(database)/documents/fields/$(fieldId)/coaches/$(coachId);
+    }
+
+    function bookingPath(bookingId) {
+      return /databases/$(database)/documents/bookings/$(bookingId);
+    }
+
+    function tournamentPath(tournamentId) {
+      return /databases/$(database)/documents/tournaments/$(tournamentId);
+    }
+
+    function tournamentTeamPath(tournamentId, teamId) {
+      return /databases/$(database)/documents/tournaments/$(tournamentId)
+        /teams/$(teamId);
+    }
+
+    function communityPostPath(postId) {
+      return /databases/$(database)/documents/community_posts/$(postId);
+    }
+
+    function tournamentIsPublic(tournamentData) {
+      return tournamentData.status in ['registration', 'scheduled'];
+    }
+
+    function ownerHasActiveSubscription(ownerId) {
+      let owner = get(userPath(ownerId)).data;
+      return owner.role == 'owner'
+        && owner.isActive == true
+        && owner.subscriptionExpiry is timestamp
+        && owner.subscriptionExpiry > request.time;
+    }
+
+    function fieldIsPublished(fieldId) {
+      let field = get(fieldPath(fieldId)).data;
+      return field.isActive == true
+        && field.ownerSubscriptionExpiry is timestamp
+        && field.ownerSubscriptionExpiry > request.time;
+    }
+
+    function hasExactKeys(data, keys) {
+      return data.keys().hasAll(keys) && data.keys().hasOnly(keys);
+    }
+
+    function validBookingForCustomer(bookingData, customerUid) {
+      let field = get(fieldPath(bookingData.fieldId)).data;
+      let customer = get(userPath(customerUid)).data;
+      return bookingData.fieldId is string
+        && field.ownerId == bookingData.ownerId
+        && bookingData.customerId == customerUid
+        && customer.role == 'customer'
+        && customer.isActive == true
+        && bookingData.customerName == customer.name
+        && field.isActive == true
+        && field.ownerSubscriptionExpiry is timestamp
+        && field.ownerSubscriptionExpiry > request.time
+        && bookingData.startAt is timestamp
+        && bookingData.endAt is timestamp
+        && bookingData.startAt > request.time
+        && bookingData.endAt > bookingData.startAt
+        && bookingData.status == 'pending'
+        && bookingData.totalPrice is number
+        && bookingData.totalPrice > 0
+        && validTrainingDetails(bookingData, field)
+        && validBookingPricing(bookingData, field)
+        && bookingData.createdAt is timestamp
+        && bookingData.createdAt <= request.time
+        && bookingData.depositRequired is bool
+        && bookingData.depositAmount is number
+        && bookingData.depositStatus is string
+        && (
+          (
+            bookingData.depositRequired == false
+            && bookingData.depositAmount == 0
+            && bookingData.depositMethod == null
+            && bookingData.depositReceiptUrl == null
+            && bookingData.depositStatus == 'not_required'
+          )
+          || (
+            bookingData.depositRequired == true
+            && bookingData.depositAmount > 0
+            && bookingData.depositAmount
+              >= bookingData.totalPrice * 0.2 - 0.01
+            && bookingData.depositAmount
+              <= bookingData.totalPrice * 0.2 + 0.01
+            && bookingData.depositAmount <= bookingData.totalPrice
+            && bookingData.depositMethod in [
+              'cash',
+              'sham_cash',
+              'syriatel_cash'
+            ]
+            && bookingData.depositStatus == 'pending_approval'
+            && (
+              (
+                bookingData.depositMethod == 'cash'
+                && bookingData.depositReceiptUrl == null
+              )
+              || (
+                bookingData.depositMethod in ['sham_cash', 'syriatel_cash']
+                && bookingData.depositReceiptUrl is string
+                && bookingData.depositReceiptUrl.matches(
+                  'https://firebasestorage[.]googleapis[.]com/.*'
+                )
+              )
+            )
+          )
+        );
+    }
+
+    function validTrainingDetails(bookingData, fieldData) {
+      return bookingData.coachId == null
+        ? bookingData.coachName == null
+          && bookingData.trainingChildName == null
+          && bookingData.trainingChildAge == null
+          && bookingData.coachPricePerHour == 0
+        : bookingData.coachId is string
+          && validTrainingCoach(bookingData, fieldData);
+    }
+
+    function validTrainingCoach(bookingData, fieldData) {
+      let reference = coachPath(bookingData.fieldId, bookingData.coachId);
+      let coach = get(reference).data;
+      return bookingData.coachId is string
+        && bookingData.coachId.size() > 0
+        && exists(reference)
+        && coach.fieldId == bookingData.fieldId
+        && coach.ownerId == fieldData.ownerId
+        && coach.isActive == true
+        && coach.name is string
+        && bookingData.coachName == coach.name
+        && coach.pricePerHour is number
+        && coach.pricePerHour > 0
+        && bookingData.coachPricePerHour == coach.pricePerHour
+        && bookingData.trainingChildName is string
+        && bookingData.trainingChildName.size() >= 2
+        && bookingData.trainingChildName.size() <= 60
+        && bookingData.trainingChildAge is int
+        && bookingData.trainingChildAge >= 3
+        && bookingData.trainingChildAge <= 17;
+    }
+
+    function validBookingPricing(bookingData, fieldData) {
+      let durationHours = (
+        bookingData.endAt.toMillis() - bookingData.startAt.toMillis()
+      ) / 3600000;
+      let expectedSubtotal = (
+        fieldData.pricePerHour + bookingData.coachPricePerHour
+      ) * durationHours;
+      return bookingData.subtotalPrice is number
+        && bookingData.coachPricePerHour is number
+        && bookingData.coachPricePerHour >= 0
+        && bookingData.discountPercent is int
+        && bookingData.subtotalPrice >= expectedSubtotal - 0.01
+        && bookingData.subtotalPrice <= expectedSubtotal + 0.01
+        && (
+          (
+            bookingData.promoCode == null
+            && bookingData.discountPercent == 0
+            && bookingData.totalPrice >= expectedSubtotal - 0.01
+            && bookingData.totalPrice <= expectedSubtotal + 0.01
+          )
+          || validPromoCodeForBooking(
+            bookingData,
+            fieldData.ownerId,
+            expectedSubtotal
+          )
+        );
+    }
+
+    function validPromoCodeForBooking(bookingData, ownerId, expectedSubtotal) {
+      let code = bookingData.promoCode;
+      let promoPath = promoCodePath(bookingData.fieldId, code);
+      let promo = get(promoPath).data;
+      let discountedTotal = expectedSubtotal
+        * (100 - bookingData.discountPercent) / 100;
+      return code is string
+        && code.matches('^[A-Z0-9]{4,20}$')
+        && bookingData.discountPercent >= 1
+        && bookingData.discountPercent <= 90
+        && exists(promoPath)
+        && promo.fieldId == bookingData.fieldId
+        && promo.ownerId == ownerId
+        && promo.code == code
+        && promo.isActive == true
+        && promo.discountPercent == bookingData.discountPercent
+        && promo.startsAt is timestamp
+        && promo.startsAt <= request.time
+        && promo.expiresAt is timestamp
+        && promo.expiresAt > request.time
+        && bookingData.totalPrice >= discountedTotal - 0.01
+        && bookingData.totalPrice <= discountedTotal + 0.01;
+    }
+
+    function validNewBookingForCustomer() {
+      return signedIn()
+        && hasExactKeys(request.resource.data, [
+          'fieldId',
+          'ownerId',
+          'customerId',
+          'customerName',
+          'startAt',
+          'endAt',
+          'status',
+          'totalPrice',
+          'createdAt',
+          'subtotalPrice',
+          'promoCode',
+          'discountPercent',
+          'depositRequired',
+          'depositAmount',
+          'depositMethod',
+          'depositReceiptUrl',
+          'depositStatus',
+          'coachId',
+          'coachName',
+          'trainingChildName',
+          'trainingChildAge',
+          'coachPricePerHour'
+        ])
+        && request.resource.data.customerName is string
+        && validBookingForCustomer(request.resource.data, request.auth.uid);
+    }
+
+    function reservationMatchesBooking(lockData, bookingId) {
+      let reservations = lockData.reservations;
+      let reservation = reservations[bookingId];
+      let booking = getAfter(bookingPath(bookingId)).data;
+      return reservation is map
+        && booking.fieldId == lockData.fieldId
+        && booking.ownerId == lockData.ownerId
+        && reservation.bookingId == bookingId
+        && reservation.startAt == booking.startAt
+        && reservation.endAt == booking.endAt
+        && reservation.status == booking.status;
+    }
+
+    function customerCreatedBookingInThisWrite(bookingId, fieldId) {
+      let beforePath = bookingPath(bookingId);
+      let booking = getAfter(beforePath).data;
+      return !exists(beforePath)
+        && existsAfter(beforePath)
+        && booking.customerId == request.auth.uid
+        && booking.fieldId == fieldId
+        && booking.status == 'pending'
+        && validBookingForCustomer(booking, request.auth.uid);
+    }
+
+    function ownerUpdatedBookingStatusInThisWrite(bookingId, fieldId) {
+      let path = bookingPath(bookingId);
+      let before = get(path).data;
+      let after = getAfter(path).data;
+      return exists(path)
+        && existsAfter(path)
+        && before.fieldId == fieldId
+        && before.ownerId == request.auth.uid
+        && after.fieldId == before.fieldId
+        && after.ownerId == before.ownerId
+        && after.customerId == before.customerId
+        && after.startAt == before.startAt
+        && after.endAt == before.endAt
+        && before.status != after.status
+        && (
+          (before.status == 'pending'
+            && after.status in ['confirmed', 'cancelled'])
+          || (
+            before.status == 'confirmed'
+            && (
+              after.status == 'cancelled'
+              || (after.status == 'completed' && before.endAt <= request.time)
+            )
+          )
+        )
+        && after.status != before.status;
+    }
+
+    function hasCompletedReviewBooking(fieldId, bookingId, customerUid) {
+      let path = bookingPath(bookingId);
+      return bookingId is string
+        && exists(path)
+        && get(path).data.fieldId == fieldId
+        && get(path).data.customerId == customerUid
+        && get(path).data.status == 'completed'
+        && get(path).data.ownerId == get(fieldPath(fieldId)).data.ownerId;
+    }
+
+    match /users/{uid} {
+      allow read: if signedIn() && (request.auth.uid == uid || isSuperAdmin());
+
+      allow create: if signedIn()
+        && request.auth.uid == uid
+        && hasExactKeys(request.resource.data, [
+          'name',
+          'email',
+          'role',
+          'phone',
+          'createdAt',
+          'isActive',
+          'subscriptionExpiry',
+          'fcmToken'
+        ])
+        && request.resource.data.name is string
+        && request.resource.data.name.size() > 0
+        && request.resource.data.email is string
+        && request.resource.data.email == request.auth.token.email
+        && request.resource.data.role in ['owner', 'customer']
+        && request.resource.data.createdAt is timestamp
+        && (
+          request.resource.data.ownerPhone == null
+          || request.resource.data.ownerPhone is string
+        )
+        && request.resource.data.isActive == true
+        && request.resource.data.subscriptionExpiry == null
+        && request.resource.data.fcmToken == null
+        && (
+          request.resource.data.phone == null
+          || request.resource.data.phone is string
+        );
+
+      allow update: if isSuperAdmin()
+        || (
+          signedIn()
+          && request.auth.uid == uid
+          && request.resource.data.diff(resource.data).affectedKeys()
+            .hasOnly(['name', 'phone', 'fcmToken'])
+          && request.resource.data.name is string
+          && request.resource.data.name.size() > 0
+          && (
+            request.resource.data.phone == null
+            || request.resource.data.phone is string
+          )
+          && (
+            request.resource.data.fcmToken == null
+            || request.resource.data.fcmToken is string
+          )
+        );
+
+      allow delete: if isSuperAdmin();
+    }
+
+    match /fields/{fieldId} {
+      allow read: if isSuperAdmin()
+        || (
+          signedIn()
+          && resource.data.ownerId == request.auth.uid
+        )
+        || (
+          resource.data.isActive == true
+          && resource.data.ownerSubscriptionExpiry is timestamp
+          && resource.data.ownerSubscriptionExpiry > request.time
+        );
+
+      allow create: if isSuperAdmin()
+        || (
+          signedIn()
+          && request.resource.data.ownerId == request.auth.uid
+          && ownerHasActiveSubscription(request.auth.uid)
+          && request.resource.data.ownerSubscriptionExpiry
+            == get(userPath(request.auth.uid)).data.subscriptionExpiry
+          && request.resource.data.keys().hasAll([
+            'ownerId',
+            'name',
+            'description',
+            'governorate',
+            'district',
+            'address',
+            'geoPoint',
+            'pricePerHour',
+            'openTime',
+            'closeTime',
+            'images',
+            'isActive',
+            'ownerSubscriptionExpiry',
+            'createdAt',
+            'ownerPhone'
+          ])
+          && request.resource.data.name is string
+          && request.resource.data.name.size() > 0
+          && request.resource.data.description is string
+          && request.resource.data.governorate is string
+          && request.resource.data.district is string
+          && request.resource.data.address is string
+          && request.resource.data.geoPoint is latlng
+          && request.resource.data.pricePerHour is number
+          && request.resource.data.pricePerHour > 0
+          && request.resource.data.openTime is string
+          && request.resource.data.closeTime is string
+          && request.resource.data.images is list
+          && request.resource.data.images.size() <= 6
+          && request.resource.data.isActive is bool
+          && (
+            request.resource.data.ownerPhone == null
+            || request.resource.data.ownerPhone is string
+          )
+          && request.resource.data.createdAt is timestamp
+        );
+
+      allow update: if isSuperAdmin()
+        || (
+          signedIn()
+          && resource.data.ownerId == request.auth.uid
+          && request.resource.data.ownerId == resource.data.ownerId
+          && request.resource.data.createdAt == resource.data.createdAt
+          && ownerHasActiveSubscription(request.auth.uid)
+          && request.resource.data.ownerSubscriptionExpiry
+            == get(userPath(request.auth.uid)).data.subscriptionExpiry
+          && request.resource.data.name is string
+          && request.resource.data.name.size() > 0
+          && request.resource.data.description is string
+          && request.resource.data.governorate is string
+          && request.resource.data.district is string
+          && request.resource.data.address is string
+          && request.resource.data.geoPoint is latlng
+          && request.resource.data.pricePerHour is number
+          && request.resource.data.pricePerHour > 0
+          && request.resource.data.openTime is string
+          && request.resource.data.closeTime is string
+          && request.resource.data.images is list
+          && request.resource.data.images.size() <= 6
+          && request.resource.data.isActive is bool
+          && (
+            request.resource.data.ownerPhone == null
+            || request.resource.data.ownerPhone is string
+          )
+        );
+
+      allow delete: if isSuperAdmin()
+        || (
+          signedIn()
+          && resource.data.ownerId == request.auth.uid
+          && ownerHasActiveSubscription(request.auth.uid)
+        );
+
+      match /reviews/{reviewId} {
+        allow read: if isSuperAdmin()
+          || (
+            signedIn()
+            && (
+              fieldIsPublished(fieldId)
+              || get(fieldPath(fieldId)).data.ownerId == request.auth.uid
+            )
+          );
+
+        allow create: if signedIn()
+          && reviewId == request.auth.uid
+          && fieldIsPublished(fieldId)
+          && hasExactKeys(request.resource.data, [
+            'fieldId',
+            'customerId',
+            'bookingId',
+            'rating',
+            'comment',
+            'createdAt'
+          ])
+          && request.resource.data.fieldId == fieldId
+          && request.resource.data.customerId == request.auth.uid
+          && request.resource.data.bookingId is string
+          && request.resource.data.rating is int
+          && request.resource.data.rating >= 1
+          && request.resource.data.rating <= 5
+          && request.resource.data.comment is string
+          && request.resource.data.comment.size() <= 500
+          && request.resource.data.createdAt is timestamp
+          && request.resource.data.createdAt <= request.time
+          && get(userPath(request.auth.uid)).data.role == 'customer'
+          && get(userPath(request.auth.uid)).data.isActive == true
+          && hasCompletedReviewBooking(
+            fieldId,
+            request.resource.data.bookingId,
+            request.auth.uid
+          );
+
+        allow update, delete: if false;
+      }
+
+      match /promo_codes/{code} {
+        allow read: if signedIn()
+          && (
+            fieldIsPublished(fieldId)
+            || get(fieldPath(fieldId)).data.ownerId == request.auth.uid
+          );
+
+        allow create: if signedIn()
+          && code.matches('^[A-Z0-9]{4,20}$')
+          && hasExactKeys(request.resource.data, [
+            'code',
+            'fieldId',
+            'ownerId',
+            'discountPercent',
+            'startsAt',
+            'expiresAt',
+            'isActive',
+            'createdAt'
+          ])
+          && get(fieldPath(fieldId)).data.ownerId == request.auth.uid
+          && get(fieldPath(fieldId)).data.isActive == true
+          && ownerHasActiveSubscription(request.auth.uid)
+          && request.resource.data.code == code
+          && request.resource.data.fieldId == fieldId
+          && request.resource.data.ownerId == request.auth.uid
+          && request.resource.data.discountPercent is int
+          && request.resource.data.discountPercent >= 1
+          && request.resource.data.discountPercent <= 90
+          && request.resource.data.startsAt is timestamp
+          && request.resource.data.startsAt <= request.time
+          && request.resource.data.expiresAt is timestamp
+          && request.resource.data.expiresAt > request.time
+          && request.resource.data.expiresAt > request.resource.data.startsAt
+          && request.resource.data.isActive == true
+          && request.resource.data.createdAt is timestamp
+          && request.resource.data.createdAt <= request.time;
+
+        allow update: if false;
+        allow delete: if signedIn()
+          && resource.data.ownerId == request.auth.uid
+          && resource.data.fieldId == fieldId;
+      }
+
+      match /coaches/{coachId} {
+        allow read: if signedIn()
+          && (
+            get(fieldPath(fieldId)).data.ownerId == request.auth.uid
+            || (
+              resource.data.isActive == true
+              && fieldIsPublished(fieldId)
+            )
+          );
+
+        allow create: if signedIn()
+          && get(fieldPath(fieldId)).data.ownerId == request.auth.uid
+          && fieldIsPublished(fieldId)
+          && ownerHasActiveSubscription(request.auth.uid)
+          && hasExactKeys(request.resource.data, [
+            'fieldId',
+            'ownerId',
+            'name',
+            'specialty',
+            'bio',
+            'pricePerHour',
+            'isActive',
+            'createdAt'
+          ])
+          && request.resource.data.fieldId == fieldId
+          && request.resource.data.ownerId == request.auth.uid
+          && request.resource.data.name is string
+          && request.resource.data.name.size() >= 2
+          && request.resource.data.name.size() <= 80
+          && request.resource.data.specialty is string
+          && request.resource.data.specialty.size() > 0
+          && request.resource.data.specialty.size() <= 80
+          && request.resource.data.bio is string
+          && request.resource.data.bio.size() <= 500
+          && request.resource.data.pricePerHour is number
+          && request.resource.data.pricePerHour > 0
+          && request.resource.data.pricePerHour <= 10000
+          && request.resource.data.isActive == true
+          && request.resource.data.createdAt is timestamp
+          && request.resource.data.createdAt == request.time;
+
+        allow update: if signedIn()
+          && get(fieldPath(fieldId)).data.ownerId == request.auth.uid
+          && request.resource.data.diff(resource.data).affectedKeys()
+            .hasOnly(['isActive'])
+          && request.resource.data.isActive is bool;
+
+        allow delete: if signedIn()
+          && get(fieldPath(fieldId)).data.ownerId == request.auth.uid;
+      }
+
+    }
+
+    match /bookings/{bookingId} {
+      allow read: if isSuperAdmin()
+        || (
+          signedIn()
+          && (
+            resource.data.customerId == request.auth.uid
+            || resource.data.ownerId == request.auth.uid
+          )
+        );
+
+      allow create: if signedIn() && validNewBookingForCustomer();
+
+      allow update: if isSuperAdmin()
+        || (
+          signedIn()
+          && resource.data.ownerId == request.auth.uid
+          && request.resource.data.diff(resource.data).affectedKeys()
+            .hasOnly(['status', 'depositStatus'])
+          && request.resource.data.status is string
+          && (
+            (resource.data.status == 'pending'
+              && request.resource.data.status in ['confirmed', 'cancelled']
+              && (
+                (
+                  resource.data.get('depositRequired', false) == true
+                  && resource.data.get('depositStatus', 'not_required')
+                    == 'pending_approval'
+                  && request.resource.data.get('depositStatus', 'not_required')
+                    == (request.resource.data.status == 'confirmed'
+                      ? 'approved'
+                      : 'rejected')
+                )
+                || (
+                  resource.data.get('depositRequired', false) == false
+                  && request.resource.data.get('depositStatus', 'not_required')
+                    == resource.data.get('depositStatus', 'not_required')
+                )
+                || (
+                  !resource.data.keys().hasAny(['depositRequired'])
+                  && !request.resource.data.keys().hasAny(['depositStatus'])
+                )
+              ))
+            || (resource.data.status == 'confirmed'
+              && (
+                request.resource.data.status == 'cancelled'
+                || (
+                  request.resource.data.status == 'completed'
+                  && resource.data.endAt <= request.time
+                )
+              )
+              && request.resource.data.get('depositStatus', 'not_required')
+                == resource.data.get('depositStatus', 'not_required'))
+          )
+        );
+
+      allow delete: if isSuperAdmin()
+        || (signedIn() && resource.data.ownerId == request.auth.uid);
+    }
+
+    match /tournaments/{tournamentId} {
+      allow read: if isSuperAdmin()
+        || (
+          signedIn()
+          && resource.data.ownerId == request.auth.uid
+        )
+        || tournamentIsPublic(resource.data);
+
+      allow create: if signedIn()
+        && hasExactKeys(request.resource.data, [
+          'ownerId',
+          'fieldId',
+          'fieldName',
+          'openTime',
+          'closeTime',
+          'name',
+          'description',
+          'maxTeams',
+          'entryFeeUsd',
+          'prizeDescription',
+          'registrationDeadline',
+          'startAt',
+          'endAt',
+          'status',
+          'registeredTeams',
+          'createdAt'
+        ])
+        && request.resource.data.ownerId == request.auth.uid
+        && get(fieldPath(request.resource.data.fieldId)).data.ownerId
+          == request.auth.uid
+        && fieldIsPublished(request.resource.data.fieldId)
+        && ownerHasActiveSubscription(request.auth.uid)
+        && request.resource.data.fieldName
+          == get(fieldPath(request.resource.data.fieldId)).data.name
+        && request.resource.data.openTime
+          == get(fieldPath(request.resource.data.fieldId)).data.openTime
+        && request.resource.data.closeTime
+          == get(fieldPath(request.resource.data.fieldId)).data.closeTime
+        && request.resource.data.name is string
+        && request.resource.data.name.size() > 0
+        && request.resource.data.name.size() <= 100
+        && request.resource.data.description is string
+        && request.resource.data.description.size() <= 1000
+        && request.resource.data.maxTeams is int
+        && request.resource.data.maxTeams >= 2
+        && request.resource.data.maxTeams <= 24
+        && request.resource.data.entryFeeUsd is number
+        && request.resource.data.entryFeeUsd >= 0
+        && request.resource.data.prizeDescription is string
+        && request.resource.data.prizeDescription.size() <= 500
+        && request.resource.data.registrationDeadline is timestamp
+        && request.resource.data.registrationDeadline > request.time
+        && request.resource.data.startAt is timestamp
+        && request.resource.data.registrationDeadline
+          < request.resource.data.startAt
+        && request.resource.data.endAt is timestamp
+        && request.resource.data.endAt > request.resource.data.startAt
+        && request.resource.data.status == 'registration'
+        && request.resource.data.registeredTeams == 0
+        && request.resource.data.createdAt is timestamp
+        && request.resource.data.createdAt <= request.time;
+
+      allow update: if isSuperAdmin()
+        || (
+          signedIn()
+          && resource.data.ownerId == request.auth.uid
+          && ownerHasActiveSubscription(request.auth.uid)
+          && request.resource.data.diff(resource.data).affectedKeys()
+            .hasOnly(['status', 'scheduleCreatedAt'])
+          && resource.data.status == 'registration'
+          && request.resource.data.status == 'scheduled'
+          && request.resource.data.scheduleCreatedAt is timestamp
+          && request.resource.data.registeredTeams
+            == resource.data.registeredTeams
+        )
+        || (
+          signedIn()
+          && get(tournamentPath(tournamentId)).data.status == 'registration'
+          && request.resource.data.diff(resource.data).affectedKeys()
+            .hasOnly(['registeredTeams'])
+          && request.resource.data.registeredTeams
+            == resource.data.registeredTeams + 1
+          && resource.data.registeredTeams < resource.data.maxTeams
+          && resource.data.registrationDeadline > request.time
+          && existsAfter(tournamentTeamPath(tournamentId, request.auth.uid))
+          && getAfter(tournamentTeamPath(tournamentId, request.auth.uid))
+            .data.captainUid == request.auth.uid
+        );
+
+      allow delete: if isSuperAdmin()
+        || (
+          signedIn()
+          && resource.data.ownerId == request.auth.uid
+          && ownerHasActiveSubscription(request.auth.uid)
+          && resource.data.status == 'registration'
+        );
+
+      match /teams/{teamId} {
+        allow read: if isSuperAdmin()
+          || (
+            signedIn()
+            && (
+              teamId == request.auth.uid
+              || get(tournamentPath(tournamentId)).data.ownerId
+                == request.auth.uid
+            )
+          );
+
+        allow create: if signedIn()
+          && teamId == request.auth.uid
+          && hasExactKeys(request.resource.data, [
+            'teamName',
+            'captainUid',
+            'captainName',
+            'paymentMethod',
+            'paymentStatus',
+            'receiptUrl',
+            'createdAt'
+          ])
+          && request.resource.data.teamName is string
+          && request.resource.data.teamName.size() > 0
+          && request.resource.data.teamName.size() <= 60
+          && request.resource.data.captainUid == request.auth.uid
+          && request.resource.data.captainName is string
+          && get(userPath(request.auth.uid)).data.role == 'customer'
+          && get(userPath(request.auth.uid)).data.isActive == true
+          && get(tournamentPath(tournamentId)).data.status == 'registration'
+          && get(tournamentPath(tournamentId)).data.registrationDeadline
+            > request.time
+          && get(tournamentPath(tournamentId)).data.registeredTeams
+            < get(tournamentPath(tournamentId)).data.maxTeams
+          && tournamentIsPublic(get(tournamentPath(tournamentId)).data)
+          && request.resource.data.paymentMethod
+            in ['cash', 'sham_cash', 'syriatel_cash']
+          && request.resource.data.paymentStatus == 'pending'
+          && (
+            (
+              request.resource.data.paymentMethod == 'cash'
+              && request.resource.data.receiptUrl == null
+            )
+            || (
+              request.resource.data.paymentMethod
+                in ['sham_cash', 'syriatel_cash']
+              && request.resource.data.receiptUrl is string
+              && request.resource.data.receiptUrl.matches(
+                'https://firebasestorage[.]googleapis[.]com/.*'
+              )
+            )
+          )
+          && request.resource.data.createdAt == request.time;
+
+        allow update: if signedIn()
+          && get(tournamentPath(tournamentId)).data.ownerId
+            == request.auth.uid
+          && resource.data.paymentStatus == 'pending'
+          && request.resource.data.diff(resource.data).affectedKeys()
+            .hasOnly(['paymentStatus', 'reviewedAt'])
+          && request.resource.data.paymentStatus in ['paid', 'rejected']
+          && request.resource.data.reviewedAt is timestamp;
+
+        allow delete: if isSuperAdmin();
+      }
+
+      match /matches/{matchId} {
+        allow read: if isSuperAdmin()
+          || (
+            signedIn()
+            && get(tournamentPath(tournamentId)).data.ownerId
+              == request.auth.uid
+          )
+          || tournamentIsPublic(get(tournamentPath(tournamentId)).data);
+
+        allow create: if signedIn()
+          && get(tournamentPath(tournamentId)).data.ownerId
+            == request.auth.uid
+          && getAfter(tournamentPath(tournamentId)).data.status == 'scheduled'
+          && hasExactKeys(request.resource.data, [
+            'round',
+            'homeTeamId',
+            'homeTeamName',
+            'awayTeamId',
+            'awayTeamName',
+            'scheduledAt',
+            'status',
+            'homeScore',
+            'awayScore'
+          ])
+          && request.resource.data.round is int
+          && request.resource.data.round > 0
+          && request.resource.data.homeTeamId is string
+          && request.resource.data.awayTeamId is string
+          && request.resource.data.homeTeamId != request.resource.data.awayTeamId
+          && request.resource.data.homeTeamName is string
+          && request.resource.data.awayTeamName is string
+          && request.resource.data.scheduledAt is timestamp
+          && request.resource.data.scheduledAt
+            >= get(tournamentPath(tournamentId)).data.startAt
+          && request.resource.data.scheduledAt
+            <= get(tournamentPath(tournamentId)).data.endAt
+          && request.resource.data.status == 'scheduled'
+          && request.resource.data.homeScore == null
+          && request.resource.data.awayScore == null;
+
+        allow update: if signedIn()
+          && get(tournamentPath(tournamentId)).data.ownerId
+            == request.auth.uid
+          && request.resource.data.diff(resource.data).affectedKeys()
+            .hasOnly(['homeScore', 'awayScore', 'status', 'updatedAt'])
+          && request.resource.data.round == resource.data.round
+          && request.resource.data.homeTeamId == resource.data.homeTeamId
+          && request.resource.data.awayTeamId == resource.data.awayTeamId
+          && request.resource.data.scheduledAt == resource.data.scheduledAt
+          && request.resource.data.homeScore is int
+          && request.resource.data.homeScore >= 0
+          && request.resource.data.homeScore <= 99
+          && request.resource.data.awayScore is int
+          && request.resource.data.awayScore >= 0
+          && request.resource.data.awayScore <= 99
+          && request.resource.data.status == 'completed'
+          && request.resource.data.updatedAt is timestamp;
+
+        allow delete: if isSuperAdmin();
+      }
+    }
+
+    match /booking_locks/{lockId} {
+      allow read: if isSuperAdmin()
+        || (
+          signedIn()
+          && resource.data.fieldId is string
+          && (
+            fieldIsPublished(resource.data.fieldId)
+            || get(fieldPath(resource.data.fieldId)).data.ownerId
+              == request.auth.uid
+          )
+        );
+
+      allow create: if signedIn()
+        && request.resource.data.keys().hasOnly([
+          'fieldId',
+          'ownerId',
+          'bookingId',
+          'reservations'
+        ])
+        && request.resource.data.keys().hasAll([
+          'fieldId',
+          'ownerId',
+          'bookingId',
+          'reservations'
+        ])
+        && request.resource.data.fieldId is string
+        && request.resource.data.ownerId is string
+        && request.resource.data.bookingId is string
+        && request.resource.data.reservations is map
+        && request.resource.data.reservations.size() == 1
+        && request.resource.data.reservations.keys().hasOnly([
+          request.resource.data.bookingId
+        ])
+        && reservationMatchesBooking(
+          request.resource.data,
+          request.resource.data.bookingId
+        )
+        && customerCreatedBookingInThisWrite(
+          request.resource.data.bookingId,
+          request.resource.data.fieldId
+        );
+
+      allow update: if signedIn()
+        && request.resource.data.fieldId == resource.data.fieldId
+        && request.resource.data.ownerId == resource.data.ownerId
+        && request.resource.data.bookingId is string
+        && request.resource.data.reservations is map
+        && resource.data.reservations is map
+        && request.resource.data.diff(resource.data).affectedKeys()
+          .hasOnly(['bookingId', 'reservations'])
+        && request.resource.data.reservations.diff(
+          resource.data.reservations
+        ).affectedKeys().hasOnly([
+          request.resource.data.bookingId
+        ])
+        && reservationMatchesBooking(
+          request.resource.data,
+          request.resource.data.bookingId
+        )
+        && (
+          customerCreatedBookingInThisWrite(
+            request.resource.data.bookingId,
+            resource.data.fieldId
+          )
+          || ownerUpdatedBookingStatusInThisWrite(
+            request.resource.data.bookingId,
+            resource.data.fieldId
+          )
+        );
+
+      allow delete: if isSuperAdmin();
+    }
+
+    match /community_posts/{postId} {
+      allow read: if signedIn();
+
+      allow create: if signedIn()
+        && hasExactKeys(request.resource.data, [
+          'authorUid',
+          'authorName',
+          'authorRole',
+          'type',
+          'title',
+          'body',
+          'governorate',
+          'fieldId',
+          'fieldName',
+          'imageUrl',
+          'status',
+          'createdAt'
+        ])
+        && request.resource.data.authorUid == request.auth.uid
+        && get(userPath(request.auth.uid)).data.isActive == true
+        && request.resource.data.authorName
+          == get(userPath(request.auth.uid)).data.name
+        && request.resource.data.authorRole
+          == get(userPath(request.auth.uid)).data.role
+        && request.resource.data.authorRole in ['customer', 'owner']
+        && request.resource.data.type in ['lost_found', 'team_search']
+        && request.resource.data.title is string
+        && request.resource.data.title.size() > 0
+        && request.resource.data.title.size() <= 100
+        && request.resource.data.body is string
+        && request.resource.data.body.size() > 0
+        && request.resource.data.body.size() <= 1500
+        && request.resource.data.governorate is string
+        && request.resource.data.governorate.size() > 0
+        && request.resource.data.governorate.size() <= 40
+        && (
+          (
+            request.resource.data.fieldId == null
+            && request.resource.data.fieldName == null
+          )
+          || (
+            request.resource.data.fieldId is string
+            && fieldIsPublished(request.resource.data.fieldId)
+            && get(fieldPath(request.resource.data.fieldId)).data.name
+              == request.resource.data.fieldName
+          )
+        )
+        && request.resource.data.imageUrl == null
+        && request.resource.data.status == 'active'
+        && request.resource.data.createdAt == request.time;
+
+      allow update: if isSuperAdmin()
+        || (
+          signedIn()
+          && resource.data.authorUid == request.auth.uid
+          && resource.data.type == 'lost_found'
+          && resource.data.status == 'active'
+          && request.resource.data.diff(resource.data).affectedKeys()
+            .hasOnly(['status'])
+          && request.resource.data.status == 'resolved'
+        )
+        || (
+          signedIn()
+          && resource.data.authorUid == request.auth.uid
+          && resource.data.imageUrl == null
+          && request.resource.data.diff(resource.data).affectedKeys()
+            .hasOnly(['imageUrl'])
+          && request.resource.data.imageUrl is string
+          && request.resource.data.imageUrl.matches(
+            'https://firebasestorage[.]googleapis[.]com/.*'
+          )
+        );
+
+      allow delete: if isSuperAdmin()
+        || (signedIn() && resource.data.authorUid == request.auth.uid);
+
+      match /replies/{replyId} {
+        allow read: if signedIn()
+          && exists(communityPostPath(postId));
+
+        allow create: if signedIn()
+          && exists(communityPostPath(postId))
+          && hasExactKeys(request.resource.data, [
+            'authorUid',
+            'authorName',
+            'authorRole',
+            'body',
+            'createdAt'
+          ])
+          && request.resource.data.authorUid == request.auth.uid
+          && get(userPath(request.auth.uid)).data.isActive == true
+          && request.resource.data.authorName
+            == get(userPath(request.auth.uid)).data.name
+          && request.resource.data.authorRole
+            == get(userPath(request.auth.uid)).data.role
+          && request.resource.data.authorRole in ['customer', 'owner']
+          && request.resource.data.body is string
+          && request.resource.data.body.size() > 0
+          && request.resource.data.body.size() <= 500
+          && request.resource.data.createdAt == request.time
+          && (
+            get(communityPostPath(postId)).data.type == 'team_search'
+            || get(communityPostPath(postId)).data.authorUid
+              == request.auth.uid
+            || (
+              get(communityPostPath(postId)).data.type == 'lost_found'
+              && get(communityPostPath(postId)).data.fieldId is string
+              && get(fieldPath(
+                get(communityPostPath(postId)).data.fieldId
+              )).data.ownerId == request.auth.uid
+            )
+          );
+
+        allow update, delete: if isSuperAdmin();
+      }
+    }
+
+    match /subscriptions/{subscriptionId} {
+      allow read, write: if isSuperAdmin();
+    }
+
+    match /admin_logs/{logId} {
+      allow read, write: if isSuperAdmin();
+    }
+
+    match /{document=**} {
+      allow read, write: if false;
+    }
+  }
+}
