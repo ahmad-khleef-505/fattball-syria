@@ -45,6 +45,15 @@ Firestore وCloud Functions وCloud Storage وFirebase Cloud Messaging.
 5. أنشئ Firestore وCloud Storage في Firebase Console. يستخدم المشروع منطقة
    `me-central1` لوظائفه، والمنطقة الزمنية `Asia/Damascus` للمهام المجدولة.
 
+## أيقونة التطبيق
+
+مصدر الأيقونة هو `assets/app_icon.png`، وإعداد التوليد موجود في
+`flutter_launcher_icons.yaml`. لتحديث أيقونات Android وiOS بعد تغيير الصورة:
+
+```powershell
+dart run flutter_launcher_icons -f flutter_launcher_icons.yaml
+```
+
 ## المحاكيات المحلية
 
 المنافذ معرفة في `firebase.json`: Authentication على 9099، Firestore على
