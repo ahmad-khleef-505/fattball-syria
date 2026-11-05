@@ -1,34 +1,24 @@
 import 'dart:convert';
-import 'dart:math' as math;
-import 'dart:ui'; // ضروري لتأثير الزجاج
 
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:fattball/core/constants.dart';
-import 'package:fattball/core/theme.dart';
 import 'package:fattball/models/field_model.dart';
 import 'package:fattball/models/user_model.dart';
 import 'package:fattball/providers/auth_provider.dart';
 import 'package:fattball/screens/customer/field_details.dart';
 import 'package:fattball/screens/customer/my_bookings.dart';
 import 'package:fattball/screens/profile/profile_screen.dart';
-import 'package:fattball/screens/customer/assistant_chat_screen.dart';
 import 'package:fattball/screens/community/community_board_screen.dart';
 import 'package:fattball/screens/tournaments/tournament_screens.dart';
 import 'package:fattball/services/auth_service.dart';
-import 'package:fattball/services/location_service.dart';
 import 'package:fattball/widgets/responsive_scaffold.dart';
-import 'package:fattball/widgets/field_card.dart';
-import 'package:fattball/widgets/sports_loading.dart';
 import 'package:fattball/widgets/glass_snack_bar.dart';
-import 'package:fattball/widgets/sports_map_layers.dart';
 import 'package:fattball/widgets/weather_widgets.dart';
 import 'package:fattball/widgets/welcome_dialog.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_animate/flutter_animate.dart';
-import 'package:flutter_map/flutter_map.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter/services.dart';
-import 'package:latlong2/latlong.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 class HomeMap extends ConsumerStatefulWidget {
@@ -40,37 +30,25 @@ class HomeMap extends ConsumerStatefulWidget {
   ConsumerState<HomeMap> createState() => _HomeMapState();
 }
 
-class _HomeMapState extends ConsumerState<HomeMap>
-    with SingleTickerProviderStateMixin {
-  final _mapController = MapController();
-  final LayerHitNotifier<String> _circleHitNotifier = ValueNotifier(null);
-  final _locationService = LocationService();
-  late final AnimationController _pulseController;
-
+class _HomeMapState extends ConsumerState<HomeMap> {
+  final _searchController = TextEditingController();
   List<Map<String, dynamic>> _governorates = [];
   List<String> _districts = [];
   String? _selectedGovernorate;
   String? _selectedDistrict;
-  String? _selectedFieldId;
   String? _locationsError;
-  double _zoom = 6;
-  bool _isLocating = false;
+  bool _isSearching = false;
 
   @override
   void initState() {
     super.initState();
-    _pulseController = AnimationController(
-      vsync: this,
-      duration: const Duration(milliseconds: 1100),
-    )..repeat(reverse: true);
     _loadLocations();
     _checkAndShowWelcomeDialog();
   }
 
   @override
   void dispose() {
-    _pulseController.dispose();
-    _circleHitNotifier.dispose();
+    _searchController.dispose();
     super.dispose();
   }
 
@@ -122,21 +100,8 @@ class _HomeMapState extends ConsumerState<HomeMap>
       if (mounted) setState(() => _locationsError = error.message);
     } on FlutterError {
       if (mounted) {
-        setState(
-            () => _locationsError = 'تعذر تحميل بيانات المحافظات من التطبيق.');
+        setState(() => _locationsError = 'تعذر تحميل بيانات المحافظات من التطبيق.');
       }
-    }
-  }
-
-  Future<void> _useCurrentLocation() async {
-    setState(() => _isLocating = true);
-    try {
-      final location = await _locationService.getCurrentLocation();
-      _mapController.move(location, math.max(_zoom, 13));
-    } on LocationServiceException catch (error) {
-      if (mounted) _showMessage(error.message);
-    } finally {
-      if (mounted) setState(() => _isLocating = false);
     }
   }
 
@@ -146,18 +111,48 @@ class _HomeMapState extends ConsumerState<HomeMap>
       ..showSnackBar(glassSnackBar(content: Text(message)));
   }
 
+  // 🚀 دالة البحث عن طريق الكود
+  Future<void> _searchByCode() async {
+    final code = _searchController.text.trim();
+    if (code.isEmpty) {
+      _showMessage('يرجى إدخال كود الملعب أولاً.');
+      return;
+    }
+
+    setState(() => _isSearching = true);
+    try {
+      final snapshot = await FirebaseFirestore.instance
+          .collection('fields')
+          .where('fieldCode', isEqualTo: code)
+          .where('isActive', isEqualTo: true)
+          .limit(1)
+          .get();
+
+      if (snapshot.docs.isEmpty) {
+        if (mounted) _showMessage('لم يتم العثور على ملعب بهذا الكود.');
+      } else {
+        final doc = snapshot.docs.first;
+        final field = FieldModel.fromMap(doc.id, doc.data());
+        
+        if (!mounted) return;
+        Navigator.of(context).push(
+          MaterialPageRoute<void>(
+            builder: (_) => FieldDetails(field: field, customer: widget.user),
+          ),
+        );
+        _searchController.clear();
+      }
+    } catch (e) {
+      if (mounted) _showMessage('حدث خطأ أثناء البحث. حاول مجدداً.');
+    } finally {
+      if (mounted) setState(() => _isSearching = false);
+    }
+  }
+
   void _openField(FieldModel field) {
     Navigator.of(context).push(
       MaterialPageRoute<void>(
         builder: (_) => FieldDetails(field: field, customer: widget.user),
-      ),
-    );
-  }
-
-  void _openAssistant() {
-    Navigator.of(context).push(
-      MaterialPageRoute<void>(
-        builder: (_) => const AssistantChatScreen(),
       ),
     );
   }
@@ -302,190 +297,89 @@ class _HomeMapState extends ConsumerState<HomeMap>
           icon: const Icon(Icons.logout),
         ),
       ],
-      floatingActionButton: FloatingActionButton.extended(
-        heroTag: 'customer-ai-assistant',
-        onPressed: _openAssistant,
-        icon: const Icon(Icons.smart_toy_outlined),
-        label: const Text('اسأل المساعد'),
-      ),
-      body: Stack(
+      // 🚀 تم إزالة زر المساعد الذكي من هنا
+      body: Column(
         children: [
-          StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
-            stream: fieldsStream,
-            builder: (context, snapshot) {
-              if (snapshot.connectionState == ConnectionState.waiting) {
-                return const Center(child: CircularProgressIndicator());
-              }
-
-              if (snapshot.hasError) {
-                return _buildPremiumErrorState(snapshot.error);
-              }
-
-              final fields = _visibleFields(snapshot.data?.docs ?? []);
-              final selectedField = _fieldForId(fields, _selectedFieldId);
-              final circles = fields
-                  .map(
-                    (field) => CircleMarker<String>(
-                      point: LatLng(
-                        field.geoPoint.latitude,
-                        field.geoPoint.longitude,
+          // 🚀 1. شريط البحث المخصص للكود (بحد أقصى 5 أرقام)
+          Padding(
+            padding: const EdgeInsets.fromLTRB(16, 16, 16, 8),
+            child: TextField(
+              controller: _searchController,
+              keyboardType: TextInputType.number,
+              textInputAction: TextInputAction.search,
+              inputFormatters: [
+                FilteringTextInputFormatter.digitsOnly,
+                LengthLimitingTextInputFormatter(5),
+              ],
+              onSubmitted: (_) => _searchByCode(),
+              decoration: InputDecoration(
+                hintText: 'ابحث بكود الملعب (حتى 5 أرقام)',
+                prefixIcon: const Icon(Icons.search),
+                suffixIcon: _isSearching 
+                    ? const Padding(
+                        padding: EdgeInsets.all(12.0),
+                        child: CircularProgressIndicator(strokeWidth: 2),
+                      )
+                    : IconButton(
+                        icon: const Icon(Icons.arrow_forward),
+                        onPressed: _searchByCode,
                       ),
-                      radius: (8 + (_zoom - 5) * 1.35).clamp(7, 23).toDouble(),
-                      color:
-                          Theme.of(context).colorScheme.primary.withAlpha(220),
-                      borderColor: Colors.white,
-                      borderStrokeWidth: 2,
-                      hitValue: field.fieldId,
-                    ),
-                  )
-                  .toList();
-
-              return Stack(
-                children: [
-                  FlutterMap(
-                    mapController: _mapController,
-                    options: MapOptions(
-                      initialCenter: const LatLng(34.8021, 38.9968),
-                      initialZoom: 6,
-                      minZoom: 4,
-                      maxZoom: 18,
-                      onPositionChanged: (camera, _) {
-                        if ((camera.zoom - _zoom).abs() > 0.1) {
-                          setState(() => _zoom = camera.zoom);
-                        }
-                      },
-                      onTap: (_, __) =>
-                          setState(() => _selectedFieldId = null),
-                    ),
-                    children: [
-                      const SportsMapTileLayer(),
-                      GestureDetector(
-                        behavior: HitTestBehavior.translucent,
-                        onTap: () {
-                          final hit = _circleHitNotifier.value?.hitValues;
-                          if (hit != null && hit.isNotEmpty) {
-                            setState(() => _selectedFieldId = hit.first);
-                          }
-                        },
-                        child: CircleLayer<String>(
-                          circles: circles,
-                          hitNotifier: _circleHitNotifier,
-                        ),
-                      ),
-                      AnimatedBuilder(
-                        animation: _pulseController,
-                        builder: (context, child) {
-                          final pulse = _pulseController.value;
-                          final markerSize =
-                              (30 + (_zoom - 5) * 1.4).clamp(28, 48);
-                          final haloCircles = fields
-                              .map(
-                                (field) => CircleMarker<String>(
-                                  point: LatLng(
-                                    field.geoPoint.latitude,
-                                    field.geoPoint.longitude,
-                                  ),
-                                  radius: (12 + (_zoom - 5) * 1.35)
-                                      .clamp(11, 27)
-                                      .toDouble(),
-                                  color: AppTheme.neonGreen.withValues(
-                                    alpha: 0.08 + pulse * 0.12,
-                                  ),
-                                  borderColor: AppTheme.neonGreen.withValues(
-                                    alpha: 0.35 + pulse * 0.35,
-                                  ),
-                                  borderStrokeWidth: 2 + pulse * 2,
-                                ),
-                              )
-                              .toList();
-                          return Stack(
-                            children: [
-                              CircleLayer<String>(circles: haloCircles),
-                              MarkerLayer(
-                                markers: [
-                                  for (final field in fields)
-                                    Marker(
-                                      point: LatLng(
-                                        field.geoPoint.latitude,
-                                        field.geoPoint.longitude,
-                                      ),
-                                      width: markerSize + pulse * 3,
-                                      height: markerSize + pulse * 3,
-                                      child: IgnorePointer(
-                                        child: Icon(
-                                          Icons.sports_soccer,
-                                          size: markerSize + pulse * 3,
-                                          color: AppTheme.neonGreen,
-                                          shadows: [
-                                            Shadow(
-                                              color: AppTheme.neonGreen
-                                                  .withValues(alpha: 0.8),
-                                              blurRadius: 10 + pulse * 8,
-                                            ),
-                                            const Shadow(
-                                              color: Colors.black87,
-                                              blurRadius: 3,
-                                            ),
-                                          ],
-                                        ),
-                                      ),
-                                    ),
-                                ],
-                              ),
-                            ],
-                          );
-                        },
-                      ),
-                      const SportsMapAttribution(),
-                    ],
-                  ),
-                  PositionedDirectional(
-                    bottom: MediaQuery.of(context).padding.bottom + 100,
-                    start: 16,
-                    child: FloatingActionButton.small(
-                      heroTag: 'customer-current-location',
-                      backgroundColor: Theme.of(context)
-                          .colorScheme
-                          .surface
-                          .withOpacity(0.9),
-                      elevation: 4,
-                      onPressed: _isLocating ? null : _useCurrentLocation,
-                      tooltip: 'موقعي',
-                      child: _isLocating
-                          ? const SizedBox(
-                              width: 18,
-                              height: 18,
-                              child: CircularProgressIndicator(strokeWidth: 2),
-                            )
-                          : const Icon(Icons.my_location),
-                    ),
-                  ),
-                  if (selectedField != null)
-                    PositionedDirectional(
-                      start: 16,
-                      end: 16,
-                      bottom: 20,
-                      child: _FieldPopup(
-                        field: selectedField,
-                        onClose: () => setState(() => _selectedFieldId = null),
-                        onBook: () => _openField(selectedField),
-                      ),
-                    ),
-                ],
-              );
-            },
-          ),
-          Positioned(
-            top: 0,
-            left: 0,
-            right: 0,
-            child: SafeArea(
-              child: Column(
-                children: [
-                  _buildGlassFilters(),
-                  WeatherSummaryCard(governorate: _selectedGovernorate),
-                ],
+                border: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(30),
+                ),
+                filled: true,
+                fillColor: Theme.of(context).colorScheme.surface,
               ),
+            ),
+          ),
+          
+          // 🚀 2. الفلاتر (المحافظة والمنطقة)
+          _buildGlassFilters(),
+          WeatherSummaryCard(governorate: _selectedGovernorate),
+          
+          // 🚀 3. قائمة كل الملاعب
+          Expanded(
+            child: StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
+              stream: fieldsStream,
+              builder: (context, snapshot) {
+                if (snapshot.connectionState == ConnectionState.waiting) {
+                  return const Center(child: CircularProgressIndicator());
+                }
+                if (snapshot.hasError) {
+                  return _buildPremiumErrorState(snapshot.error);
+                }
+
+                final fields = _visibleFields(snapshot.data?.docs ?? []);
+
+                if (fields.isEmpty) {
+                  return Center(
+                    child: Column(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Icon(Icons.sports_soccer, size: 80, color: Theme.of(context).colorScheme.outlineVariant),
+                        const SizedBox(height: 16),
+                        Text(
+                          'لا توجد ملاعب متاحة حالياً',
+                          style: Theme.of(context).textTheme.titleLarge?.copyWith(fontWeight: FontWeight.bold),
+                        ),
+                        const SizedBox(height: 8),
+                        const Text('جرب تغيير المحافظة أو المنطقة أو البحث بالكود'),
+                      ],
+                    ),
+                  ).animate().fadeIn().scale();
+                }
+
+                // عرض جميع الملاعب في قائمة
+                return ListView.separated(
+                  padding: const EdgeInsets.only(left: 16, right: 16, top: 8, bottom: 80),
+                  itemCount: fields.length,
+                  separatorBuilder: (_, __) => const SizedBox(height: 16),
+                  itemBuilder: (context, index) {
+                    final field = fields[index];
+                    return _buildPremiumFieldCard(field).animate().fadeIn(delay: (index * 100).ms).slideY(begin: 0.1);
+                  },
+                );
+              },
             ),
           ),
         ],
@@ -498,44 +392,44 @@ class _HomeMapState extends ConsumerState<HomeMap>
       padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
       child: ClipRRect(
         borderRadius: BorderRadius.circular(20),
-        child: BackdropFilter(
-          filter: ImageFilter.blur(sigmaX: 10, sigmaY: 10),
-          child: Container(
-            padding: const EdgeInsets.all(8),
-            decoration: BoxDecoration(
-              color: Colors.white.withOpacity(0.1),
-              borderRadius: BorderRadius.circular(20),
-              border: Border.all(color: Colors.white.withOpacity(0.2)),
-            ),
-            child: Row(
-              children: [
-                Expanded(
-                  child: _buildFilterButton(
-                    label: _selectedGovernorate ?? 'كل المحافظات',
-                    icon: Icons.map_outlined,
-                    onTap: () => _showPremiumPicker(isGovernorate: true),
-                  ),
+        child: Container(
+          padding: const EdgeInsets.all(8),
+          decoration: BoxDecoration(
+            color: Theme.of(context).colorScheme.surfaceContainerHighest.withOpacity(0.5),
+            borderRadius: BorderRadius.circular(20),
+            border: Border.all(color: Theme.of(context).colorScheme.outlineVariant.withOpacity(0.3)),
+          ),
+          child: Row(
+            children: [
+              Expanded(
+                child: _buildFilterButton(
+                  label: _selectedGovernorate ?? 'كل المحافظات',
+                  icon: Icons.map_outlined,
+                  onTap: () => _showPremiumPicker(isGovernorate: true),
                 ),
-                Container(width: 1, height: 24, color: Colors.white24),
-                Expanded(
-                  child: _buildFilterButton(
-                    label: _selectedDistrict ?? 'كل المناطق',
-                    icon: Icons.location_city_outlined,
-                    onTap: _selectedGovernorate == null
-                        ? null
-                        : () => _showPremiumPicker(isGovernorate: false),
-                  ),
+              ),
+              Container(width: 1, height: 24, color: Theme.of(context).dividerColor),
+              Expanded(
+                child: _buildFilterButton(
+                  label: _selectedDistrict ?? 'كل المناطق',
+                  icon: Icons.location_city_outlined,
+                  onTap: _selectedGovernorate == null
+                      ? null
+                      : () => _showPremiumPicker(isGovernorate: false),
                 ),
-              ],
-            ),
+              ),
+            ],
           ),
         ),
       ),
     );
   }
 
-  Widget _buildFilterButton(
-      {required String label, required IconData icon, VoidCallback? onTap}) {
+  Widget _buildFilterButton({
+    required String label,
+    required IconData icon,
+    VoidCallback? onTap,
+  }) {
     final isActive = onTap != null;
     return InkWell(
       onTap: onTap,
@@ -545,8 +439,7 @@ class _HomeMapState extends ConsumerState<HomeMap>
         child: Row(
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
-            Icon(icon,
-                size: 18, color: isActive ? Colors.white : Colors.white38),
+            Icon(icon, size: 18, color: isActive ? Theme.of(context).colorScheme.primary : Theme.of(context).disabledColor),
             const SizedBox(width: 8),
             Expanded(
               child: Text(
@@ -555,14 +448,13 @@ class _HomeMapState extends ConsumerState<HomeMap>
                 maxLines: 1,
                 overflow: TextOverflow.ellipsis,
                 style: TextStyle(
-                  color: isActive ? Colors.white : Colors.white38,
+                  color: isActive ? Theme.of(context).colorScheme.onSurface : Theme.of(context).disabledColor,
                   fontWeight: isActive ? FontWeight.bold : FontWeight.normal,
                   fontSize: 13,
                 ),
               ),
             ),
-            Icon(Icons.keyboard_arrow_down,
-                size: 18, color: isActive ? Colors.white70 : Colors.white38),
+            Icon(Icons.keyboard_arrow_down, size: 18, color: isActive ? Theme.of(context).colorScheme.primary : Theme.of(context).disabledColor),
           ],
         ),
       ),
@@ -574,7 +466,6 @@ class _HomeMapState extends ConsumerState<HomeMap>
       context: context,
       backgroundColor: Colors.transparent,
       builder: (context) {
-        // 1. تجهيز القائمة في متغير منفصل لتجنب خطأ الـ Object
         List<Map<String, dynamic>> itemsToShow = [];
         if (isGovernorate) {
           itemsToShow = _governorates;
@@ -625,7 +516,6 @@ class _HomeMapState extends ConsumerState<HomeMap>
                           } else {
                             _selectedDistrict = null;
                           }
-                          _selectedFieldId = null;
                         });
                         Navigator.pop(context);
                       },
@@ -649,7 +539,6 @@ class _HomeMapState extends ConsumerState<HomeMap>
                             } else {
                               _selectedDistrict = name;
                             }
-                            _selectedFieldId = null;
                           });
                           Navigator.pop(context);
                         },
@@ -662,6 +551,89 @@ class _HomeMapState extends ConsumerState<HomeMap>
           ),
         );
       },
+    );
+  }
+
+  Widget _buildPremiumFieldCard(FieldModel field) {
+    return Card(
+      elevation: 2,
+      clipBehavior: Clip.antiAlias,
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+      child: InkWell(
+        onTap: () => _openField(field),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            if (field.images.isNotEmpty)
+              Image.network(
+                field.images.first,
+                height: 160,
+                fit: BoxFit.cover,
+                errorBuilder: (_, __, ___) => Container(
+                  height: 160,
+                  color: Theme.of(context).colorScheme.surfaceContainerHighest,
+                  child: const Center(child: Icon(Icons.broken_image, size: 50)),
+                ),
+              )
+            else
+              Container(
+                height: 160,
+                color: Theme.of(context).colorScheme.surfaceContainerHighest,
+                child: Center(child: Icon(Icons.sports_soccer, size: 60, color: Theme.of(context).colorScheme.primary)),
+              ),
+            
+            Padding(
+              padding: const EdgeInsets.all(16),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    children: [
+                      Expanded(
+                        child: Text(
+                          field.name,
+                          style: Theme.of(context).textTheme.titleLarge?.copyWith(fontWeight: FontWeight.bold),
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                      ),
+                      Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                        decoration: BoxDecoration(
+                          color: Theme.of(context).colorScheme.primaryContainer,
+                          borderRadius: BorderRadius.circular(8),
+                        ),
+                        child: Text(
+                          '${field.pricePerHour.toStringAsFixed(0)} ${field.currency}',
+                          style: TextStyle(color: Theme.of(context).colorScheme.onPrimaryContainer, fontWeight: FontWeight.bold),
+                        ),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 8),
+                  Row(
+                    children: [
+                      Icon(Icons.location_on, size: 16, color: Theme.of(context).colorScheme.secondary),
+                      const SizedBox(width: 4),
+                      Text('${field.governorate} - ${field.district}', style: TextStyle(color: Theme.of(context).colorScheme.onSurfaceVariant)),
+                    ],
+                  ),
+                  const SizedBox(height: 16),
+                  SizedBox(
+                    width: double.infinity,
+                    child: FilledButton.icon(
+                      onPressed: () => _openField(field),
+                      icon: const Icon(Icons.event_available),
+                      label: const Text('احجز الآن'),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ),
+      ),
     );
   }
 
@@ -702,7 +674,7 @@ class _HomeMapState extends ConsumerState<HomeMap>
             ),
             const SizedBox(height: 12),
             Text(
-              _firestoreError(error),
+              'تعذر تحميل البيانات. تحقق من اتصالك بالإنترنت.',
               textAlign: TextAlign.center,
               style: TextStyle(
                   color: Theme.of(context).colorScheme.onSurfaceVariant,
@@ -721,52 +693,5 @@ class _HomeMapState extends ConsumerState<HomeMap>
         ),
       ),
     ).animate().fadeIn().scale(duration: 400.ms, curve: Curves.easeOutBack);
-  }
-
-  FieldModel? _fieldForId(List<FieldModel> fields, String? id) {
-    if (id == null) return null;
-    for (final field in fields) {
-      if (field.fieldId == id) return field;
-    }
-    return null;
-  }
-
-  String _firestoreError(Object? error) {
-    if (error is FirebaseException) {
-      return switch (error.code) {
-        'permission-denied' => 'تعذر عرض الملاعب بسبب إعدادات الصلاحيات.',
-        'unavailable' => 'الخدمة غير متاحة حالياً. تحقق من اتصالك.',
-        'failed-precondition' =>
-          'تعذر تحميل الملاعب؛ قد يتطلب الأمر إنشاء فهرس Firestore.',
-        _ => 'تعذر تحميل الملاعب. يرجى المحاولة مجدداً.',
-      };
-    }
-    return 'تعذر تحميل الملاعب. يرجى المحاولة مجدداً.';
-  }
-}
-
-class _FieldPopup extends StatelessWidget {
-  const _FieldPopup({
-    required this.field,
-    required this.onClose,
-    required this.onBook,
-  });
-
-  final FieldModel field;
-  final VoidCallback onClose;
-  final VoidCallback onBook;
-
-  @override
-  Widget build(BuildContext context) {
-    return FieldCard(
-      field: field,
-      onBook: onBook,
-      onClose: onClose,
-    ).animate().fadeIn(duration: 240.ms).slideY(
-          begin: 0.08,
-          end: 0,
-          duration: 240.ms,
-          curve: Curves.easeOutCubic,
-        );
   }
 }

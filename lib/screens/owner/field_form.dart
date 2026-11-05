@@ -1,4 +1,5 @@
 import 'dart:convert';
+import 'package:http/http.dart' as http;
 
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:fattball/core/constants.dart';
@@ -9,7 +10,6 @@ import 'package:fattball/services/firestore_service.dart';
 import 'package:fattball/widgets/responsive_scaffold.dart';
 import 'package:fattball/widgets/sports_button.dart';
 import 'package:fattball/widgets/glass_snack_bar.dart';
-import 'package:firebase_storage/firebase_storage.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -26,16 +26,15 @@ class FieldForm extends ConsumerStatefulWidget {
 }
 
 class _FieldFormState extends ConsumerState<FieldForm> {
-  static const _maximumImages = 6;
-  
-  // موقع افتراضي (مركز دمشق) بما أن الخريطة تم إزالتها
+  static const _maximumImages = 4;
   static const double _defaultLat = 33.5138;
   static const double _defaultLng = 36.2763;
 
   final _formKey = GlobalKey<FormState>();
   final _picker = ImagePicker();
-  final _storage = FirebaseStorage.instance;
+  
   final _nameController = TextEditingController();
+  final _fieldCodeController = TextEditingController();
   final _descriptionController = TextEditingController();
   final _addressController = TextEditingController();
   final _priceController = TextEditingController();
@@ -47,7 +46,7 @@ class _FieldFormState extends ConsumerState<FieldForm> {
   List<String> _existingImages = [];
   String? _selectedGovernorate;
   String? _selectedDistrict;
-  String? _selectedCurrency; // العملة
+  String? _selectedCurrency;
   String _openTime = '08:00';
   String _closeTime = '23:00';
   bool _isLoadingLocations = true;
@@ -62,6 +61,7 @@ class _FieldFormState extends ConsumerState<FieldForm> {
     final field = widget.field;
     if (field != null) {
       _nameController.text = field.name;
+      _fieldCodeController.text = field.fieldCode;
       _descriptionController.text = field.description;
       _addressController.text = field.address;
       _priceController.text = field.pricePerHour.toString();
@@ -79,6 +79,7 @@ class _FieldFormState extends ConsumerState<FieldForm> {
   @override
   void dispose() {
     _nameController.dispose();
+    _fieldCodeController.dispose();
     _descriptionController.dispose();
     _addressController.dispose();
     _priceController.dispose();
@@ -142,22 +143,29 @@ class _FieldFormState extends ConsumerState<FieldForm> {
     }
 
     try {
-      final files = await _picker.pickMultiImage(imageQuality: 82, maxWidth: 1600);
+      final files = await _picker.pickMultiImage(
+        imageQuality: 80, 
+        maxWidth: 1200,
+        maxHeight: 1200,
+      );
+      
       final selectedFiles = files.take(remaining);
       final photos = <_PickedPhoto>[];
       for (final file in selectedFiles) {
-        photos.add(_PickedPhoto(file, await file.readAsBytes()));
+        final bytes = await file.readAsBytes();
+        photos.add(_PickedPhoto(file, bytes));
       }
 
       if (!mounted) return;
       setState(() => _newPhotos.addAll(photos));
+      
       if (files.length > remaining) {
         _showMessage('أُضيفت أول $remaining صور فقط للوصول إلى الحد الأقصى.');
       }
     } on PlatformException {
-      if (mounted) _showMessage('تعذر فتح معرض الصور.');
-    } on FirebaseException {
-      if (mounted) _showMessage('تعذر قراءة الصور المحددة.');
+      if (mounted) _showMessage('تعذر فتح معرض الصور. تأكد من منح صلاحية الوصول للمعرض.');
+    } catch (e) {
+      if (mounted) _showMessage('حدث خطأ أثناء قراءة الصور.');
     }
   }
 
@@ -196,39 +204,60 @@ class _FieldFormState extends ConsumerState<FieldForm> {
     final document = _isEditing ? collection.doc(widget.field!.fieldId) : collection.doc();
 
     try {
-      for (var index = 0; index < _newPhotos.length; index++) {
-        final photo = _newPhotos[index];
-        final reference = _storage.ref().child('fields/${document.id}/${DateTime.now().microsecondsSinceEpoch}_$index');
-        final metadata = SettableMetadata(
-          contentType: photo.file.mimeType ?? 'image/jpeg',
-          customMetadata: {'ownerId': widget.user.uid},
-        );
-        await reference.putData(photo.bytes, metadata);
-        uploadedUrls.add(await reference.getDownloadURL());
+      final userSnapshot = await FirebaseFirestore.instance.collection('users').doc(widget.user.uid).get();
+      final latestUserData = userSnapshot.data();
+      final latestIsActive = latestUserData?['isActive'] == true;
+      final latestExpiry = (latestUserData?['subscriptionExpiry'] as Timestamp?)?.toDate();
+
+      final subscriptionActive = latestIsActive &&
+          latestExpiry != null &&
+          latestExpiry.isAfter(DateTime.now());
+
+      if (!subscriptionActive) {
+        if (mounted) {
+          _showMessage('عذراً، اشتراكك غير فعال أو منتهي. يرجى التجديد من صفحة الاشتراك.');
+          setState(() => _isSaving = false);
+        }
+        return;
       }
 
-      final subscriptionExpiry = widget.user.subscriptionExpiry;
-      final subscriptionActive = widget.user.isActive &&
-          subscriptionExpiry != null &&
-          subscriptionExpiry.isAfter(DateTime.now());
+      const imgbbApiKey = '4bb6c80644549babc1da1450fa65e744'; 
       
+      for (var index = 0; index < _newPhotos.length; index++) {
+        final photo = _newPhotos[index];
+        final base64Image = base64Encode(photo.bytes);
+        
+        final response = await http.post(
+          Uri.parse('https://api.imgbb.com/1/upload?key=$imgbbApiKey'),
+          body: {'image': base64Image},
+        );
+
+        if (response.statusCode == 200) {
+          final jsonResponse = jsonDecode(response.body);
+          final imageUrl = jsonResponse['data']['url'];
+          uploadedUrls.add(imageUrl);
+        } else {
+          throw Exception('فشل رفع الصورة. رمز الحالة: ${response.statusCode}');
+        }
+      }
+
       final field = FieldModel(
         fieldId: document.id,
         ownerId: widget.user.uid,
         name: _nameController.text.trim(),
+        fieldCode: _fieldCodeController.text.trim(),
         description: _descriptionController.text.trim(),
         governorate: _selectedGovernorate!,
         district: _selectedDistrict!,
         address: _addressController.text.trim(),
-        // استخدام الإحداثيات الافتراضية
         geoPoint: const GeoPoint(_defaultLat, _defaultLng),
         pricePerHour: double.parse(_priceController.text.trim()),
         currency: _selectedCurrency ?? 'USD',
         openTime: _openTime,
         closeTime: _closeTime,
         images: [..._existingImages, ...uploadedUrls],
-        isActive: subscriptionActive,
-        ownerSubscriptionExpiry: subscriptionExpiry,
+        isActive: true,
+        ownerSubscriptionExpiry: latestExpiry,
         createdAt: widget.field?.createdAt ?? DateTime.now(),
         ownerPhone: _ownerPhoneController.text.trim().isEmpty ? null : _ownerPhoneController.text.trim(),
       );
@@ -247,56 +276,16 @@ class _FieldFormState extends ConsumerState<FieldForm> {
         );
       }
 
-      final removedImages = widget.field?.images.where((url) => !_existingImages.contains(url)).toList() ?? [];
-      var oldImageCleanupFailed = false;
-      for (final url in removedImages) {
-        try {
-          await _storage.refFromURL(url).delete();
-        } on FirebaseException {
-          oldImageCleanupFailed = true;
-        }
-      }
-
       if (!mounted) return;
-      if (oldImageCleanupFailed) {
-        _showMessage('تم حفظ بيانات الملعب، لكن تعذر حذف بعض الصور القديمة.');
-      }
+      _showMessage('تم حفظ الملعب بنجاح وأصبح متاحاً للجميع.');
       Navigator.of(context).pop(true);
-    } on FirestoreServiceException catch (error) {
-      final cleanupFailed = await _deleteUploadedImages(uploadedUrls);
+    } catch (e) {
       if (mounted) {
-        _showMessage(cleanupFailed ? '${error.message} وتعذر حذف بعض الصور المرفوعة.' : error.message);
-      }
-    } on FirebaseException catch (error) {
-      final cleanupFailed = await _deleteUploadedImages(uploadedUrls);
-      if (mounted) {
-        _showMessage(cleanupFailed ? '${_storageErrorMessage(error.code)} وتعذر حذف بعض الصور المرفوعة.' : _storageErrorMessage(error.code));
+        _showMessage('حدث خطأ أثناء حفظ الملعب: $e');
       }
     } finally {
       if (mounted) setState(() => _isSaving = false);
     }
-  }
-
-  Future<bool> _deleteUploadedImages(List<String> urls) async {
-    var failed = false;
-    for (final url in urls) {
-      try {
-        await _storage.refFromURL(url).delete();
-      } on FirebaseException {
-        failed = true;
-      }
-    }
-    return failed;
-  }
-
-  String _storageErrorMessage(String code) {
-    return switch (code) {
-      'unauthorized' || 'permission-denied' => 'ليست لديك صلاحية رفع الصور أو حذفها.',
-      'canceled' => 'تم إلغاء رفع الصور.',
-      'retry-limit-exceeded' => 'تعذر رفع الصورة بعد عدة محاولات.',
-      'object-not-found' => 'تعذر العثور على الصورة المطلوبة.',
-      _ => 'تعذر حفظ الصور. تحقق من الاتصال وحاول مجدداً.',
-    };
   }
 
   void _showMessage(String message) {
@@ -345,6 +334,27 @@ class _FieldFormState extends ConsumerState<FieldForm> {
                           validator: (value) => (value?.trim().isEmpty ?? true) ? 'أدخل اسم الملعب.' : null,
                         ),
                         const SizedBox(height: 14),
+                        // 🚀 حقل الكود الجديد (بحد أقصى 5 أرقام)
+                        TextFormField(
+                          controller: _fieldCodeController,
+                          keyboardType: TextInputType.number,
+                          inputFormatters: [
+                            FilteringTextInputFormatter.digitsOnly,
+                            LengthLimitingTextInputFormatter(5),
+                          ],
+                          decoration: const InputDecoration(
+                            labelText: 'معرف الملعب (كود للبحث)',
+                            helperText: 'أدخل رقماً من 1 إلى 5 أرقام (مثال: 12345)',
+                            prefixIcon: Icon(Icons.numbers),
+                          ),
+                          validator: (value) {
+                            final code = value?.trim() ?? '';
+                            if (code.isEmpty) return 'أدخل معرفاً للملعب.';
+                            if (code.length > 5) return 'يجب ألا يتجاوز المعرف 5 أرقام.';
+                            return null;
+                          },
+                        ),
+                        const SizedBox(height: 14),
                         TextFormField(
                           controller: _descriptionController,
                           minLines: 2,
@@ -357,7 +367,6 @@ class _FieldFormState extends ConsumerState<FieldForm> {
                         ),
                         const SizedBox(height: 14),
                         
-                        // قائمة العملة
                         DropdownButtonFormField<String>(
                           value: _selectedCurrency,
                           decoration: const InputDecoration(
@@ -374,7 +383,6 @@ class _FieldFormState extends ConsumerState<FieldForm> {
                         ),
                         const SizedBox(height: 14),
 
-                        // حقل السعر
                         TextFormField(
                           controller: _priceController,
                           enabled: _selectedCurrency != null && !_isSaving,
@@ -484,8 +492,8 @@ class _FieldFormState extends ConsumerState<FieldForm> {
                             ),
                           ],
                         ),
-                        const SizedBox(height: 16),
-                        // تم إزالة زر تحديد الموقع من هنا
+                        const SizedBox(height: 24),
+                        
                         Row(
                           children: [
                             Expanded(
@@ -514,7 +522,24 @@ class _FieldFormState extends ConsumerState<FieldForm> {
                                       width: 88,
                                       height: 88,
                                       fit: BoxFit.cover,
-                                      errorBuilder: (_, __, ___) => const Icon(Icons.broken_image_outlined),
+                                      loadingBuilder: (context, child, loadingProgress) {
+                                        if (loadingProgress == null) return child;
+                                        return Container(
+                                          width: 88,
+                                          height: 88,
+                                          color: Theme.of(context).colorScheme.surfaceContainerHighest,
+                                          child: const Center(child: CircularProgressIndicator(strokeWidth: 2)),
+                                        );
+                                      },
+                                      errorBuilder: (_, __, ___) => Container(
+                                        width: 88,
+                                        height: 88,
+                                        decoration: BoxDecoration(
+                                          color: Theme.of(context).colorScheme.surfaceContainerHighest,
+                                          borderRadius: BorderRadius.circular(10),
+                                        ),
+                                        child: const Icon(Icons.image_not_supported, color: Colors.grey),
+                                      ),
                                     ),
                                     onRemove: _isSaving
                                         ? null

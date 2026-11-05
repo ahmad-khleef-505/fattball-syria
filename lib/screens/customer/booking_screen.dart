@@ -67,6 +67,15 @@ class _BookingScreenState extends ConsumerState<BookingScreen> {
     super.dispose();
   }
 
+  String _getCurrencySymbol(String currency) {
+    switch (currency) {
+      case 'USD': return '\$';
+      case 'SYP': return 'ل.س';
+      case 'TRY': return 'TL';
+      default: return currency;
+    }
+  }
+
   void _onDayChanged(DateTime newDay) {
     setState(() {
       _selectedDay = newDay;
@@ -111,10 +120,7 @@ class _BookingScreenState extends ConsumerState<BookingScreen> {
     final childName = _childNameController.text.trim();
     final childAge = int.tryParse(_childAgeController.text.trim());
     if (widget.coach != null &&
-        (childName.length < 2 ||
-            childAge == null ||
-            childAge < 3 ||
-            childAge > 17)) {
+        (childName.length < 2 || childAge == null || childAge < 3 || childAge > 17)) {
       _showMessage('أدخل الاسم الأول للطفل وعمره بين 3 و17 سنة.');
       return;
     }
@@ -136,7 +142,7 @@ class _BookingScreenState extends ConsumerState<BookingScreen> {
       if (!mounted) return;
       if (result is BookingCreated) {
         HapticFeedback.heavyImpact();
-        _showMessage('تم إرسال طلب الحجز بنجاح.');
+        _showMessage('تم إرسال طلب الحجز بنجاح. بانتظار موافقة صاحب الملعب.');
         Navigator.of(context).pop();
       } else if (result is BookingConflict) {
         _showMessage(result.message);
@@ -165,7 +171,6 @@ class _BookingScreenState extends ConsumerState<BookingScreen> {
 
   @override
   Widget build(BuildContext context) {
-    // جلب أقفال الحجوزات لهذا الملعب
     final locksStream = FirebaseFirestore.instance
         .collection('booking_locks')
         .where('fieldId', isEqualTo: widget.field.fieldId)
@@ -183,7 +188,6 @@ class _BookingScreenState extends ConsumerState<BookingScreen> {
             return const Center(child: CircularProgressIndicator());
           }
 
-          // استخراج الحجوزات من الأقفال
           final bookings = _extractBookings(snapshot.data?.docs ?? []);
 
           return ResponsiveContent(
@@ -198,46 +202,55 @@ class _BookingScreenState extends ConsumerState<BookingScreen> {
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        Text('اختر اليوم',
-                            style: Theme.of(context).textTheme.titleMedium),
+                        Text(widget.field.name, style: Theme.of(context).textTheme.titleLarge),
+                        const SizedBox(height: 6),
+                        Text('${widget.field.governorate} - ${widget.field.district}'),
+                        const SizedBox(height: 6),
+                        Text(
+                          '${widget.field.pricePerHour.toStringAsFixed(0)} ${_getCurrencySymbol(widget.field.currency)} / 90 دقيقة',
+                          style: TextStyle(color: Theme.of(context).colorScheme.primary, fontWeight: FontWeight.bold),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+                const SizedBox(height: 20),
+                Card(
+                  child: Padding(
+                    padding: const EdgeInsets.all(16),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text('اختر اليوم', style: Theme.of(context).textTheme.titleMedium),
                         const SizedBox(height: 12),
                         Row(
                           children: [
                             Expanded(
                               child: ChoiceChip(
                                 label: const Text('اليوم'),
-                                selected: _isSameDay(
-                                    _selectedDay, DateTime.now()),
-                                onSelected: (_) =>
-                                    _onDayChanged(DateTime.now()),
+                                selected: _isSameDay(_selectedDay, DateTime.now()),
+                                onSelected: (_) => _onDayChanged(DateTime.now()),
                               ),
                             ),
                             const SizedBox(width: 8),
                             Expanded(
                               child: ChoiceChip(
                                 label: const Text('غداً'),
-                                selected: _isSameDay(
-                                    _selectedDay,
-                                    DateTime.now()
-                                        .add(const Duration(days: 1))),
-                                onSelected: (_) => _onDayChanged(
-                                    DateTime.now()
-                                        .add(const Duration(days: 1))),
+                                selected: _isSameDay(_selectedDay, DateTime.now().add(const Duration(days: 1))),
+                                onSelected: (_) => _onDayChanged(DateTime.now().add(const Duration(days: 1))),
                               ),
                             ),
                             const SizedBox(width: 8),
                             Expanded(
                               child: ActionChip(
-                                avatar:
-                                    const Icon(Icons.calendar_month, size: 18),
+                                avatar: const Icon(Icons.calendar_month, size: 18),
                                 label: const Text('تاريخ آخر'),
                                 onPressed: () async {
                                   final picked = await showDatePicker(
                                     context: context,
                                     initialDate: _selectedDay,
                                     firstDate: DateTime.now(),
-                                    lastDate: DateTime.now()
-                                        .add(const Duration(days: 365)),
+                                    lastDate: DateTime.now().add(const Duration(days: 365)),
                                   );
                                   if (picked != null) _onDayChanged(picked);
                                 },
@@ -248,28 +261,23 @@ class _BookingScreenState extends ConsumerState<BookingScreen> {
                         const SizedBox(height: 8),
                         Text(
                           'التاريخ المحدد: ${_formatDate(_selectedDay)}',
-                          style: TextStyle(
-                              color: Theme.of(context).colorScheme.primary,
-                              fontWeight: FontWeight.bold),
+                          style: TextStyle(color: Theme.of(context).colorScheme.primary, fontWeight: FontWeight.bold),
                         ),
                       ],
                     ),
                   ),
                 ),
                 const SizedBox(height: 20),
-                Text('اختر الوقت',
-                    style: Theme.of(context).textTheme.titleLarge),
+                Text('اختر الوقت', style: Theme.of(context).textTheme.titleLarge),
                 const SizedBox(height: 12),
                 BookingSlotPicker(
                   field: widget.field,
                   bookings: bookings,
-                 selectedDay: _selectedDay, // نمرر اليوم المختار هنا
-                  onSlotSelected: (slot) =>
-                      setState(() => _selectedSlot = slot),
+                  selectedDay: _selectedDay,
+                  onSlotSelected: (slot) => setState(() => _selectedSlot = slot),
                 ),
                 const SizedBox(height: 20),
                 if (_selectedSlot != null) ...[
-                  // كارت الخصم والعربون (بشكل مبسط)
                   Card(
                     child: Padding(
                       padding: const EdgeInsets.all(14),
@@ -282,17 +290,14 @@ class _BookingScreenState extends ConsumerState<BookingScreen> {
                               labelText: 'كود الخصم',
                               suffixIcon: IconButton(
                                 icon: const Icon(Icons.check),
-                                onPressed: _isCheckingPromo
-                                    ? null
-                                    : _applyPromoCode,
+                                onPressed: _isCheckingPromo ? null : _applyPromoCode,
                               ),
                             ),
                           ),
                           SwitchListTile(
                             title: const Text('دفع عربون لتأكيد الحجز'),
                             value: _depositRequired,
-                            onChanged: (val) =>
-                                setState(() => _depositRequired = val),
+                            onChanged: (val) => setState(() => _depositRequired = val),
                           ),
                         ],
                       ),
@@ -309,8 +314,7 @@ class _BookingScreenState extends ConsumerState<BookingScreen> {
         child: FilledButton.icon(
           onPressed: _isSubmitting || _selectedSlot == null ? null : _submit,
           icon: _isSubmitting
-              ? const SizedBox(
-                  width: 20, height: 20, child: CircularProgressIndicator(strokeWidth: 2))
+              ? const SizedBox(width: 20, height: 20, child: CircularProgressIndicator(strokeWidth: 2))
               : const Icon(Icons.check_circle_outline),
           label: const Text('إرسال طلب الحجز'),
         ),
@@ -318,8 +322,7 @@ class _BookingScreenState extends ConsumerState<BookingScreen> {
     );
   }
 
-  List<BookingModel> _extractBookings(
-      List<QueryDocumentSnapshot<Map<String, dynamic>>> documents) {
+  List<BookingModel> _extractBookings(List<QueryDocumentSnapshot<Map<String, dynamic>>> documents) {
     final bookings = <BookingModel>[];
     for (final doc in documents) {
       final data = doc.data();

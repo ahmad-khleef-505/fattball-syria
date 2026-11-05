@@ -27,7 +27,6 @@ class AdminService {
     }
 
     try {
-      // إجبار التحديث (true) لقراءة الصلاحيات مباشرة من السيرفر وليس من الذاكرة
       final token = await currentUser.getIdTokenResult(true); 
       if (token.claims?['admin'] != true ||
           token.claims?['superadmin'] != true) {
@@ -137,28 +136,23 @@ class AdminService {
     try {
       final batch = _firestore.batch();
       
-      // 1. حذف حساب المستخدم
       batch.delete(_firestore.collection('users').doc(ownerId));
 
-      // 2. حذف جميع الملاعب
       final fields = await _firestore.collection('fields').where('ownerId', isEqualTo: ownerId).get();
       for (var doc in fields.docs) {
         batch.delete(doc.reference);
       }
 
-      // 3. حذف جميع الحجوزات
       final bookings = await _firestore.collection('bookings').where('ownerId', isEqualTo: ownerId).get();
       for (var doc in bookings.docs) {
         batch.delete(doc.reference);
       }
 
-      // 4. حذف أوقات الصيانة
       final maintenance = await _firestore.collection('field_maintenance').where('ownerId', isEqualTo: ownerId).get();
       for (var doc in maintenance.docs) {
         batch.delete(doc.reference);
       }
 
-      // 5. حذف أقفال المواعيد
       final locks = await _firestore.collection('booking_locks').where('ownerId', isEqualTo: ownerId).get();
       for (var doc in locks.docs) {
         batch.delete(doc.reference);
@@ -166,7 +160,6 @@ class AdminService {
 
       await batch.commit();
 
-      // 6. تسجيل عملية الحذف
       await _firestore.collection('admin_logs').add({
         'adminUid': _auth.currentUser?.uid,
         'action': 'حذف حساب صاحب ملعب نهائياً',

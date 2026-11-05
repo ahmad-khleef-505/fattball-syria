@@ -14,28 +14,23 @@ sealed class BookingResult {
 
 class BookingCreated extends BookingResult {
   const BookingCreated(this.booking);
-
   final BookingModel booking;
 }
 
 class BookingConflict extends BookingResult {
   const BookingConflict()
       : message = 'هذا الموعد محجوز بالفعل. اختر موعداً آخر.';
-
   final String message;
 }
 
 class BookingRejected extends BookingResult {
   const BookingRejected(this.message);
-
   final String message;
 }
 
 class BookingServiceException implements Exception {
   const BookingServiceException(this.message);
-
   final String message;
-
   @override
   String toString() => message;
 }
@@ -275,7 +270,7 @@ class BookingService {
             customerName: customer.name,
             startAt: startUtc,
             endAt: endUtc,
-            status: BookingStatus.pending, // الحالة فوراً pending لتظهر للمالك
+            status: BookingStatus.pending,
             totalPrice: totalPrice,
             createdAt: DateTime.now().toUtc(),
             subtotalPrice: subtotalPrice,
@@ -368,9 +363,7 @@ class BookingService {
           throw const BookingServiceException('الحجز المطلوب غير موجود.');
         }
         if (bookingData['ownerId'] != ownerId) {
-          throw const BookingServiceException(
-            'هذا الحجز لا يتبع حسابك.',
-          );
+          throw const BookingServiceException('هذا الحجز لا يتبع حسابك.');
         }
 
         final currentStatus = bookingData['status'];
@@ -467,7 +460,6 @@ class BookingService {
     }
   }
 
-  // تم استبدال الدالة السحابية بعملية مباشرة عبر Firestore
   Future<void> rescheduleBooking({
     required String bookingId,
     required String ownerId,
@@ -499,7 +491,6 @@ class BookingService {
         final newStartUtc = startAt.toUtc();
         final newEndUtc = endAt.toUtc();
 
-        // التحقق من التعارض مع الحجوزات الأخرى في الأيام الجديدة
         final newLockRefs = _dayKeys(newStartUtc, newEndUtc)
             .map((dayKey) => _firestore.collection('booking_locks').doc('${fieldId}_$dayKey'))
             .toList();
@@ -517,13 +508,11 @@ class BookingService {
           }
         }
 
-        // 1. تحديث بيانات الحجز
         transaction.update(bookingRef, {
           'startAt': Timestamp.fromDate(newStartUtc),
           'endAt': Timestamp.fromDate(newEndUtc),
         });
 
-        // 2. إزالة الحجز من أقفال الأيام القديمة
         final oldLockRefs = _dayKeys(oldStart, oldEnd)
             .map((dayKey) => _firestore.collection('booking_locks').doc('${fieldId}_$dayKey'))
             .toList();
@@ -535,7 +524,6 @@ class BookingService {
           }
         }
 
-        // 3. إضافة الحجز إلى أقفال الأيام الجديدة
         for (final lockRef in newLockRefs) {
           transaction.set(lockRef, {
             'reservations': {
@@ -554,7 +542,6 @@ class BookingService {
     }
   }
 
-  // تم استبدال الدالة السحابية بعملية مباشرة عبر Firestore
   Future<String> addFieldMaintenance({
     required String fieldId,
     required DateTime startAt,
@@ -588,7 +575,6 @@ class BookingService {
     }
   }
 
-  // تم استبدال الدالة السحابية بعملية مباشرة عبر Firestore
   Future<void> removeFieldMaintenance({
     required String fieldId,
     required String maintenanceId,

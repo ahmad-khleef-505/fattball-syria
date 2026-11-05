@@ -15,17 +15,26 @@ class OwnerAnalyticsPanel extends StatelessWidget {
       builder: (context, snapshot) {
         if (!snapshot.hasData) return const SizedBox.shrink();
 
-        final bookings = snapshot.data!.docs;
-        int totalBookings = bookings.length;
-        double expectedRevenue = 0.0;
-        int confirmed = 0;
+        final now = DateTime.now();
+        final startOfDay = DateTime(now.year, now.month, now.day);
+        final endOfDay = DateTime(now.year, now.month, now.day + 1);
 
-        for (var doc in bookings) {
+        int todayBookings = 0;
+        double todayRevenue = 0.0;
+        int todayConfirmed = 0;
+
+        for (var doc in snapshot.data!.docs) {
           final data = doc.data() as Map<String, dynamic>;
+          final startAt = (data['startAt'] as Timestamp?)?.toDate();
           final status = data['status'];
-          if (status == 'confirmed' || status == 'completed') {
-            confirmed++;
-            expectedRevenue += (data['totalPrice'] ?? 0).toDouble();
+
+          // حساب الإحصائيات لليوم الحالي فقط
+          if (startAt != null && startAt.isAfter(startOfDay) && startAt.isBefore(endOfDay)) {
+            todayBookings++;
+            if (status == 'confirmed' || status == 'completed') {
+              todayConfirmed++;
+              todayRevenue += (data['totalPrice'] ?? 0).toDouble();
+            }
           }
         }
 
@@ -33,11 +42,11 @@ class OwnerAnalyticsPanel extends StatelessWidget {
           padding: const EdgeInsets.symmetric(horizontal: 16.0, vertical: 8.0),
           child: Row(
             children: [
-              _buildStatCard(context, 'إجمالي الحجوزات', totalBookings.toString(), Icons.calendar_month, Colors.blue),
+              _buildStatCard(context, 'حجوزات اليوم', todayBookings.toString(), Icons.calendar_month, Colors.blue),
               const SizedBox(width: 12),
-              _buildStatCard(context, 'الأرباح', '\$${expectedRevenue.toStringAsFixed(0)}', Icons.attach_money, Colors.green),
+              _buildStatCard(context, 'أرباح اليوم', '\$${todayRevenue.toStringAsFixed(0)}', Icons.attach_money, Colors.green),
               const SizedBox(width: 12),
-              _buildStatCard(context, 'المؤكدة', confirmed.toString(), Icons.check_circle, Colors.orange),
+              _buildStatCard(context, 'المؤكدة اليوم', todayConfirmed.toString(), Icons.check_circle, Colors.orange),
             ],
           ),
         );
