@@ -38,10 +38,10 @@ dependencies:
   csv: ^6.0.0
   path_provider: ^2.1.4
   
-  # ✅ تم تصحيح الإصدار ليكون متوافقاً
+  # ✅ إصدار متوافق
   package_info_plus: ^8.1.0
   
-  # ✅ تمت إضافة الحزم الناقصة لملف التذاكر
+  # ✅ الحزم الناقصة لملف التذاكر
   pdf: ^3.11.1
   printing: ^5.13.3
 
@@ -51,10 +51,12 @@ dev_dependencies:
   flutter_lints: ^5.0.0
   flutter_launcher_icons: ^0.14.4
 
-# هذا القسم يمنع تعارض vector_math
+# هذا القسم يمنع التعارضات
 dependency_overrides:
   vector_math: ^2.2.0
-  web: ^1.0.0 # يمنع تعارض الحزم مع Firebase
+  web: ^1.0.0 
+  # 👇 السطر الجديد الذي سيحل مشكلة البناء في GitHub Actions
+  image: ^4.2.0 
 
 flutter:
   uses-material-design: true
