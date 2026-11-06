@@ -37,6 +37,13 @@ dependencies:
   # 🚀 الحزم الجديدة لتصدير CSV
   csv: ^6.0.0
   path_provider: ^2.1.4
+  
+  # ✅ تم تصحيح الإصدار ليكون متوافقاً
+  package_info_plus: ^8.1.0
+  
+  # ✅ تمت إضافة الحزم الناقصة لملف التذاكر
+  pdf: ^3.11.1
+  printing: ^5.13.3
 
 dev_dependencies:
   flutter_test:
@@ -47,6 +54,7 @@ dev_dependencies:
 # هذا القسم يمنع تعارض vector_math
 dependency_overrides:
   vector_math: ^2.2.0
+  web: ^1.0.0 # يمنع تعارض الحزم مع Firebase
 
 flutter:
   uses-material-design: true

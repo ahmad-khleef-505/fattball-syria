@@ -21,7 +21,7 @@ android {
 
     defaultConfig {
         applicationId = "com.fattball.syria"
-        minSdk = 23
+        minSdk = flutter.minSdkVersion
         targetSdk = flutter.targetSdkVersion
         versionCode = flutter.versionCode
         versionName = flutter.versionName
