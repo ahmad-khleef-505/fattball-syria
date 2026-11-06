@@ -1,10 +1,12 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:fattball/models/user_model.dart';
 import 'package:fattball/providers/auth_provider.dart';
+import 'package:fattball/providers/theme_provider.dart';
 import 'package:fattball/services/auth_service.dart';
 import 'package:fattball/widgets/glass_snack_bar.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:share_plus/share_plus.dart'; // 🚀 استيراد حزمة المشاركة
 
 class ProfileScreen extends ConsumerStatefulWidget {
   const ProfileScreen({super.key, required this.user});
@@ -88,6 +90,15 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
     } finally {
       if (mounted) setState(() => _isSendingReset = false);
     }
+  }
+
+  // 🚀 دالة مشاركة التطبيق
+  void _shareApp() {
+    // يمكنك تغيير الرابط لاحقاً إلى رابط التطبيق الفعلي على Google Play أو App Store
+    const String appLink = 'https://play.google.com/store/apps/details?id=com.fattball.syria';
+    const String shareText = 'اكتشف أفضل ملاعب كرة القدم في سوريا واحجز موعدك الآن عبر تطبيق Fattball!\n\nرابط التحميل:\n$appLink';
+    
+    Share.share(shareText);
   }
 
   Future<void> _confirmSignOut() async {
@@ -227,7 +238,38 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
                   : 'إرسال رابط تغيير كلمة المرور',
             ),
           ),
-          const SizedBox(height: 8),
+          const SizedBox(height: 20),
+          
+          // 🚀 زر التبديل بين الوضع الليلي والنهاري
+          SwitchListTile(
+            title: const Text('الوضع الليلي'),
+            subtitle: const Text('تفعيل المظهر الداكن لراحة العين'),
+            secondary: Icon(
+              ref.watch(themeModeProvider) == ThemeMode.dark
+                  ? Icons.dark_mode
+                  : Icons.light_mode,
+            ),
+            value: ref.watch(themeModeProvider) == ThemeMode.dark,
+            onChanged: (bool value) {
+              ref.read(themeModeProvider.notifier).toggleTheme(value);
+            },
+            activeColor: Theme.of(context).colorScheme.primary,
+          ),
+          
+          const Divider(height: 32),
+
+          // 🚀 زر مشاركة التطبيق الجديد
+          OutlinedButton.icon(
+            onPressed: _shareApp,
+            icon: const Icon(Icons.share, color: Colors.green),
+            label: const Text('شارك التطبيق مع أصدقائك', style: TextStyle(color: Colors.green)),
+            style: OutlinedButton.styleFrom(
+              side: const BorderSide(color: Colors.green),
+            ),
+          ),
+          
+          const SizedBox(height: 20),
+          
           FilledButton.icon(
             style: FilledButton.styleFrom(
               backgroundColor: Theme.of(context).colorScheme.error,

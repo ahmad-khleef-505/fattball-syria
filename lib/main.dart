@@ -6,6 +6,7 @@ import 'package:fattball/core/firebase_options.dart';
 import 'package:fattball/core/theme.dart';
 import 'package:fattball/models/user_model.dart';
 import 'package:fattball/providers/auth_provider.dart';
+import 'package:fattball/providers/theme_provider.dart';
 import 'package:fattball/screens/admin/admin_dashboard.dart';
 import 'package:fattball/screens/customer/home_map.dart';
 import 'package:fattball/screens/auth/login_screen.dart';
@@ -17,6 +18,8 @@ import 'package:fattball/widgets/glass_snack_bar.dart';
 import 'package:firebase_core/firebase_core.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:package_info_plus/package_info_plus.dart';
+import 'package:url_launcher/url_launcher.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -32,24 +35,152 @@ Future<void> main() async {
   runApp(const ProviderScope(child: FattballApp()));
 }
 
-class FattballApp extends StatelessWidget {
+class FattballApp extends ConsumerWidget {
   const FattballApp({super.key});
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
+    final themeMode = ref.watch(themeModeProvider);
+
     return MaterialApp(
       title: AppConstants.appName,
       debugShowCheckedModeBanner: false,
       theme: AppTheme.lightTheme,
       darkTheme: AppTheme.darkTheme,
-      themeMode: ThemeMode.system,
+      themeMode: themeMode, 
       builder: (context, child) {
         return Directionality(
           textDirection: AppTheme.textDirection,
           child: child ?? const SizedBox.shrink(),
         );
       },
-      home: const _StartupScreen(),
+      home: const _AppVersionChecker(), // 🚀 نبدأ بفحص الإصدار أولاً
+    );
+  }
+}
+
+// 🚀 شاشة فحص الإصدار
+class _AppVersionChecker extends StatefulWidget {
+  const _AppVersionChecker();
+
+  @override
+  State<_AppVersionChecker> createState() => _AppVersionCheckerState();
+}
+
+class _AppVersionCheckerState extends State<_AppVersionChecker> {
+  bool _isChecking = true;
+  bool _needsUpdate = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _checkVersion();
+  }
+
+  Future<void> _checkVersion() async {
+    try {
+      final packageInfo = await PackageInfo.fromPlatform();
+      final currentVersion = packageInfo.version; // مثال: "1.0.0"
+
+      final doc = await FirebaseFirestore.instance
+          .collection('app_settings')
+          .doc('version')
+          .get();
+
+      if (doc.exists) {
+        final minVersion = doc.data()?['min_version'] ?? '1.0.0';
+        // مقارنة الإصدارات
+        if (_compareVersions(currentVersion, minVersion) < 0) {
+          if (mounted) setState(() => _needsUpdate = true);
+        }
+      }
+    } catch (e) {
+      // في حال حدوث خطأ، نكمل التطبيق طبيعياً لتجنب حظر المستخدم
+    } finally {
+      if (mounted) setState(() => _isChecking = false);
+    }
+  }
+
+  // دالة لمقارنة الإصدارات (مثل 1.0.1 و 1.0.0)
+  int _compareVersions(String v1, String v2) {
+    final parts1 = v1.split('.').map(int.parse).toList();
+    final parts2 = v2.split('.').map(int.parse).toList();
+    for (var i = 0; i < 3; i++) {
+      final p1 = i < parts1.length ? parts1[i] : 0;
+      final p2 = i < parts2.length ? parts2[i] : 0;
+      if (p1 > p2) return 1;
+      if (p1 < p2) return -1;
+    }
+    return 0;
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    if (_isChecking) {
+      return const Scaffold(
+        body: Center(child: CircularProgressIndicator()),
+      );
+    }
+
+    if (_needsUpdate) {
+      return const _UpdateRequiredScreen();
+    }
+
+    // إذا كان الإصدار حديثاً، ننتقل للشاشة الطبيعية
+    return const _StartupScreen();
+  }
+}
+
+// 🚀 شاشة التحديث الإجباري
+class _UpdateRequiredScreen extends StatelessWidget {
+  const _UpdateRequiredScreen();
+
+  Future<void> _openStore() async {
+    // ضع هنا رابط التطبيق على Google Play (أو App Store)
+    const url = 'https://play.google.com/store/apps/details?id=com.fattball.syria';
+    final uri = Uri.parse(url);
+    if (await canLaunchUrl(uri)) {
+      await launchUrl(uri, mode: LaunchMode.externalApplication);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      body: Center(
+        child: Padding(
+          padding: const EdgeInsets.all(32.0),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Icon(Icons.system_update, size: 80, color: Theme.of(context).colorScheme.primary),
+              const SizedBox(height: 24),
+              Text(
+                'تحديث مطلوب',
+                style: Theme.of(context).textTheme.headlineSmall?.copyWith(fontWeight: FontWeight.bold),
+              ),
+              const SizedBox(height: 12),
+              const Text(
+                'لقد قمنا بإضافة تحسينات وميزات جديدة! يرجى تحديث التطبيق إلى أحدث إصدار للمتابعة.',
+                textAlign: TextAlign.center,
+                style: TextStyle(fontSize: 16, height: 1.5),
+              ),
+              const SizedBox(height: 32),
+              SizedBox(
+                width: double.infinity,
+                child: FilledButton.icon(
+                  onPressed: _openStore,
+                  icon: const Icon(Icons.download),
+                  label: const Text('تحديث الآن'),
+                  style: FilledButton.styleFrom(
+                    padding: const EdgeInsets.symmetric(vertical: 16),
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
     );
   }
 }

@@ -6,7 +6,9 @@ import 'package:fattball/models/field_model.dart';
 import 'package:fattball/models/user_model.dart';
 import 'package:fattball/providers/auth_provider.dart';
 import 'package:fattball/screens/customer/field_details.dart';
+import 'package:fattball/screens/customer/favorites_screen.dart';
 import 'package:fattball/screens/customer/my_bookings.dart';
+import 'package:fattball/screens/customer/notifications_screen.dart'; // 🚀 استيراد شاشة الإشعارات
 import 'package:fattball/screens/profile/profile_screen.dart';
 import 'package:fattball/screens/community/community_board_screen.dart';
 import 'package:fattball/screens/tournaments/tournament_screens.dart';
@@ -111,7 +113,6 @@ class _HomeMapState extends ConsumerState<HomeMap> {
       ..showSnackBar(glassSnackBar(content: Text(message)));
   }
 
-  // 🚀 دالة البحث عن طريق الكود
   Future<void> _searchByCode() async {
     final code = _searchController.text.trim();
     if (code.isEmpty) {
@@ -291,16 +292,53 @@ class _HomeMapState extends ConsumerState<HomeMap> {
         }
       },
       actions: [
+        // 🚀 زر الإشعارات
+        StreamBuilder<QuerySnapshot>(
+          stream: FirebaseFirestore.instance
+              .collection('notifications')
+              .where('userId', isEqualTo: widget.user.uid)
+              .where('isRead', isEqualTo: false)
+              .snapshots(),
+          builder: (context, snapshot) {
+            final unreadCount = snapshot.data?.docs.length ?? 0;
+            return IconButton(
+              tooltip: 'الإشعارات',
+              onPressed: () {
+                Navigator.of(context).push(
+                  MaterialPageRoute(
+                    builder: (_) => NotificationsScreen(customer: widget.user),
+                  ),
+                );
+              },
+              icon: Badge(
+                isLabelVisible: unreadCount > 0,
+                label: Text('$unreadCount'),
+                child: const Icon(Icons.notifications_outlined),
+              ),
+            );
+          },
+        ),
+        // 🚀 زر المفضلة
+        IconButton(
+          tooltip: 'المفضلة',
+          onPressed: () {
+            Navigator.of(context).push(
+              MaterialPageRoute(
+                builder: (_) => FavoritesScreen(customer: widget.user),
+              ),
+            );
+          },
+          icon: const Icon(Icons.favorite, color: Colors.redAccent),
+        ),
+        // زر تسجيل الخروج
         IconButton(
           tooltip: 'تسجيل الخروج',
           onPressed: _confirmSignOut,
           icon: const Icon(Icons.logout),
         ),
       ],
-      // 🚀 تم إزالة زر المساعد الذكي من هنا
       body: Column(
         children: [
-          // 🚀 1. شريط البحث المخصص للكود (بحد أقصى 5 أرقام)
           Padding(
             padding: const EdgeInsets.fromLTRB(16, 16, 16, 8),
             child: TextField(
@@ -333,11 +371,9 @@ class _HomeMapState extends ConsumerState<HomeMap> {
             ),
           ),
           
-          // 🚀 2. الفلاتر (المحافظة والمنطقة)
           _buildGlassFilters(),
           WeatherSummaryCard(governorate: _selectedGovernorate),
           
-          // 🚀 3. قائمة كل الملاعب
           Expanded(
             child: StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
               stream: fieldsStream,
@@ -369,7 +405,6 @@ class _HomeMapState extends ConsumerState<HomeMap> {
                   ).animate().fadeIn().scale();
                 }
 
-                // عرض جميع الملاعب في قائمة
                 return ListView.separated(
                   padding: const EdgeInsets.only(left: 16, right: 16, top: 8, bottom: 80),
                   itemCount: fields.length,

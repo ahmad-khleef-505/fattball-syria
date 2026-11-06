@@ -1,4 +1,7 @@
+import 'dart:io';
+import 'dart:convert';
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:csv/csv.dart';
 import 'package:fattball/core/constants.dart';
 import 'package:fattball/models/booking_model.dart';
 import 'package:fattball/models/user_model.dart';
@@ -13,6 +16,8 @@ import 'package:fattball/widgets/sports_loading.dart';
 import 'package:fattball/widgets/glass_snack_bar.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:path_provider/path_provider.dart';
+import 'package:share_plus/share_plus.dart';
 import 'package:timezone/data/latest.dart' as timezone_data;
 import 'package:timezone/timezone.dart' as timezone;
 
@@ -30,8 +35,8 @@ class _OwnerBookingsScreenState extends ConsumerState<OwnerBookingsScreen> {
   late final timezone.Location _damascus;
   final Set<String> _updatingBookingIds = {};
   
-  // 0 = اليوم والغد، 1 = مستقبلية
   int _selectedSection = 0; 
+  List<BookingModel> _currentBookings = [];
 
   @override
   void initState() {
@@ -47,6 +52,447 @@ class _OwnerBookingsScreenState extends ConsumerState<OwnerBookingsScreen> {
         '${local.day.toString().padLeft(2, '0')}  '
         '${local.hour.toString().padLeft(2, '0')}:'
         '${local.minute.toString().padLeft(2, '0')}';
+  }
+
+  // 🚀 دالة تصدير ملف CSV
+  Future<void> _exportToCsv() async {
+    if (_currentBookings.isEmpty) {
+      _showMessage('لا توجد حجوزات لتصديرها.');
+      return;
+    }
+
+    try {
+      List<List<dynamic>> rows = [];
+      
+      rows.add([
+        "اسم العميل",
+        "التاريخ",
+        "وقت البداية",
+        "وقت النهاية",
+        "السعر الإجمالي",
+        "الحالة"
+      ]);
+
+      for (var booking in _currentBookings) {
+        final startLocal = timezone.TZDateTime.from(booking.startAt, _damascus);
+        final endLocal = timezone.TZDateTime.from(booking.endAt, _damascus);
+        
+        rows.add([
+          booking.customerName,
+          '${startLocal.year}/${startLocal.month}/${startLocal.day}',
+          '${startLocal.hour.toString().padLeft(2, '0')}:${startLocal.minute.toString().padLeft(2, '0')}',
+          '${endLocal.hour.toString().padLeft(2, '0')}:${endLocal.minute.toString().padLeft(2, '0')}',
+          booking.totalPrice.toStringAsFixed(2),
+          _statusLabel(booking.status)
+        ]);
+      }
+
+      String csvData = const ListToCsvConverter().convert(rows);
+
+      final directory = await getTemporaryDirectory();
+      final path = '${directory.path}/bookings_report.csv';
+      final file = File(path);
+      
+      await file.writeAsString(csvData, encoding: utf8);
+
+      if (mounted) {
+        await Share.shareXFiles([XFile(path)], text: 'تقرير حجوزات الملعب');
+      }
+    } catch (e) {
+      if (mounted) _showMessage('تعذر تصدير التقرير. حاول مجدداً.');
+    }
+  }
+
+  // 🚀 دالة إضافة الحجز اليدوي
+  Future<void> _addManualBooking() async {
+    final fieldsSnapshot = await FirebaseFirestore.instance
+        .collection('fields')
+        .where('ownerId', isEqualTo: widget.owner.uid)
+        .get();
+    
+    if (!mounted) return;
+    if (fieldsSnapshot.docs.isEmpty) {
+      _showMessage('أضف ملعباً أولاً.');
+      return;
+    }
+
+    var selectedFieldId = fieldsSnapshot.docs.first.id;
+    var selectedDate = DateTime.now().add(const Duration(days: 1));
+    var startTime = const TimeOfDay(hour: 18, minute: 0);
+    var endTime = const TimeOfDay(hour: 19, minute: 30);
+    final customerNameController = TextEditingController();
+
+    final result = await showDialog<bool>(
+      context: context,
+      builder: (dialogContext) => StatefulBuilder(
+        builder: (context, setDialogState) => AlertDialog(
+          title: const Text('إضافة حجز يدوي'),
+          content: SingleChildScrollView(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                DropdownButtonFormField<String>(
+                  value: selectedFieldId,
+                  decoration: const InputDecoration(labelText: 'الملعب'),
+                  items: fieldsSnapshot.docs.map((doc) => DropdownMenuItem(
+                    value: doc.id,
+                    child: Text(doc.data()['name'] as String),
+                  )).toList(),
+                  onChanged: (val) => setDialogState(() => selectedFieldId = val!),
+                ),
+                const SizedBox(height: 8),
+                TextField(
+                  controller: customerNameController,
+                  decoration: const InputDecoration(labelText: 'اسم العميل (الكابتن)'),
+                ),
+                const SizedBox(height: 8),
+                OutlinedButton.icon(
+                  onPressed: () async {
+                    final picked = await showDatePicker(
+                      context: context,
+                      initialDate: selectedDate,
+                      firstDate: DateTime.now(),
+                      lastDate: DateTime.now().add(const Duration(days: 365)),
+                    );
+                    if (picked != null) setDialogState(() => selectedDate = picked);
+                  },
+                  icon: const Icon(Icons.calendar_today),
+                  label: Text('${selectedDate.year}/${selectedDate.month}/${selectedDate.day}'),
+                ),
+                const SizedBox(height: 8),
+                Row(
+                  children: [
+                    Expanded(
+                      child: OutlinedButton(
+                        onPressed: () async {
+                          final picked = await showTimePicker(context: context, initialTime: startTime);
+                          if (picked != null) setDialogState(() => startTime = picked);
+                        },
+                        child: Text('من: ${startTime.format(context)}'),
+                      ),
+                    ),
+                    const SizedBox(width: 8),
+                    Expanded(
+                      child: OutlinedButton(
+                        onPressed: () async {
+                          final picked = await showTimePicker(context: context, initialTime: endTime);
+                          if (picked != null) setDialogState(() => endTime = picked);
+                        },
+                        child: Text('إلى: ${endTime.format(context)}'),
+                      ),
+                    ),
+                  ],
+                ),
+              ],
+            ),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(dialogContext, false),
+              child: const Text('إلغاء'),
+            ),
+            FilledButton(
+              onPressed: () {
+                if (customerNameController.text.trim().isEmpty) return;
+                Navigator.pop(dialogContext, true);
+              },
+              child: const Text('حفظ الحجز'),
+            ),
+          ],
+        ),
+      ),
+    );
+
+    if (result == true && mounted) {
+      try {
+        final startAt = DateTime(selectedDate.year, selectedDate.month, selectedDate.day, startTime.hour, startTime.minute);
+        final endAt = DateTime(selectedDate.year, selectedDate.month, selectedDate.day, endTime.hour, endTime.minute);
+
+        await ref.read(bookingServiceProvider).createManualBooking(
+              ownerId: widget.owner.uid,
+              fieldId: selectedFieldId,
+              customerName: customerNameController.text.trim(),
+              startAt: startAt,
+              endAt: endAt,
+            );
+        if (mounted) _showMessage('تمت إضافة الحجز اليدوي بنجاح.');
+      } on BookingServiceException catch (error) {
+        if (mounted) _showMessage(error.message);
+      }
+    }
+    customerNameController.dispose();
+  }
+
+  Future<void> _openMaintenanceManager() async {
+    await showDialog<void>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('أوقات الصيانة'),
+        content: SizedBox(
+          width: 520,
+          child: StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
+            stream: ref
+                .read(bookingServiceProvider)
+                .watchFieldMaintenance(widget.owner.uid),
+            builder: (context, snapshot) {
+              if (snapshot.hasError) {
+                return const Text('تعذر تحميل أوقات الصيانة.');
+              }
+              if (snapshot.connectionState == ConnectionState.waiting) {
+                return const SizedBox(
+                  height: 100,
+                  child: Center(child: CircularProgressIndicator()),
+                );
+              }
+              final records = [...?snapshot.data?.docs]
+                ..sort((first, second) {
+                  final firstStart = first.data()['startAt'];
+                  final secondStart = second.data()['startAt'];
+                  if (firstStart is! Timestamp || secondStart is! Timestamp) {
+                    return 0;
+                  }
+                  return firstStart.compareTo(secondStart);
+                });
+              if (records.isEmpty) {
+                return const Padding(
+                  padding: EdgeInsets.symmetric(vertical: 20),
+                  child: SportsEmptyState(
+                    title: 'لا توجد أوقات صيانة',
+                    message: 'يمكنك إضافة يوم كامل أو فترة زمنية محددة.',
+                  ),
+                );
+              }
+              return SizedBox(
+                height: 340,
+                child: ListView.separated(
+                  shrinkWrap: true,
+                  itemCount: records.length,
+                  separatorBuilder: (_, __) => const Divider(height: 1),
+                  itemBuilder: (context, index) {
+                    final document = records[index];
+                    final data = document.data();
+                    final start = data['startAt'];
+                    final end = data['endAt'];
+                    final timeRange = start is Timestamp && end is Timestamp
+                        ? '${_dateTime(start.toDate())} – '
+                            '${_dateTime(end.toDate())}'
+                        : 'وقت غير صالح';
+                    return ListTile(
+                      contentPadding: EdgeInsets.zero,
+                      title: Text(data['reason'] as String? ?? 'صيانة'),
+                      subtitle: Text(timeRange),
+                      trailing: IconButton(
+                        tooltip: 'إلغاء فترة الصيانة',
+                        onPressed: () => _removeMaintenance(
+                          document.id,
+                          data['fieldId'] as String? ?? '',
+                        ),
+                        icon: const Icon(Icons.delete_outline),
+                      ),
+                    );
+                  },
+                ),
+              );
+            },
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(),
+            child: const Text('إغلاق'),
+          ),
+          FilledButton.icon(
+            onPressed: _createMaintenance,
+            icon: const Icon(Icons.add),
+            label: const Text('إضافة فترة'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Future<void> _createMaintenance() async {
+    final fieldsSnapshot = await FirebaseFirestore.instance
+        .collection('fields')
+        .where('ownerId', isEqualTo: widget.owner.uid)
+        .get();
+    final ownedFields = fieldsSnapshot.docs
+        .where((document) => document.data()['name'] is String)
+        .toList();
+    if (!mounted) return;
+    if (ownedFields.isEmpty) {
+      _showMessage('أضف ملعباً أولاً قبل تحديد أوقات الصيانة.');
+      return;
+    }
+
+    final reasonController = TextEditingController();
+    var selectedDate = DateTime.now().add(const Duration(days: 1));
+    var startTime = const TimeOfDay(hour: 8, minute: 0);
+    var endTime = const TimeOfDay(hour: 20, minute: 0);
+    var wholeDay = true;
+    String? selectedFieldId =
+        ownedFields.length == 1 ? ownedFields.single.id : null;
+    try {
+      final result = await showDialog<
+          (String, DateTime, TimeOfDay, TimeOfDay, bool, String)>(
+        context: context,
+        builder: (dialogContext) => StatefulBuilder(
+          builder: (context, setDialogState) => AlertDialog(
+            title: const Text('إضافة فترة صيانة'),
+            content: SingleChildScrollView(
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  DropdownButtonFormField<String>(
+                    value: selectedFieldId,
+                    decoration: const InputDecoration(labelText: 'الملعب'),
+                    items: [
+                      for (final field in ownedFields)
+                        DropdownMenuItem<String>(
+                          value: field.id,
+                          child: Text(field.data()['name'] as String),
+                        ),
+                    ],
+                    onChanged: (value) =>
+                        setDialogState(() => selectedFieldId = value),
+                  ),
+                  const SizedBox(height: 8),
+                  TextField(
+                    controller: reasonController,
+                    maxLength: 160,
+                    onChanged: (_) => setDialogState(() {}),
+                    decoration: const InputDecoration(
+                      labelText: 'سبب الصيانة',
+                      hintText: 'مثال: صيانة أرضية الملعب',
+                    ),
+                  ),
+                  const SizedBox(height: 8),
+                  OutlinedButton.icon(
+                    onPressed: () async {
+                      final picked = await showDatePicker(
+                        context: context,
+                        initialDate: selectedDate,
+                        firstDate: DateTime.now(),
+                        lastDate: DateTime.now().add(const Duration(days: 365)),
+                      );
+                      if (picked != null) {
+                        setDialogState(() => selectedDate = picked);
+                      }
+                    },
+                    icon: const Icon(Icons.calendar_today_outlined),
+                    label: Text(
+                      '${selectedDate.year}/${selectedDate.month.toString().padLeft(2, '0')}/${selectedDate.day.toString().padLeft(2, '0')}',
+                    ),
+                  ),
+                  CheckboxListTile(
+                    contentPadding: EdgeInsets.zero,
+                    value: wholeDay,
+                    onChanged: (value) =>
+                        setDialogState(() => wholeDay = value ?? true),
+                    title: const Text('حظر اليوم كاملاً'),
+                  ),
+                  if (!wholeDay) ...[
+                    OutlinedButton(
+                      onPressed: () async {
+                        final picked = await showTimePicker(
+                          context: context,
+                          initialTime: startTime,
+                        );
+                        if (picked != null) {
+                          setDialogState(() => startTime = picked);
+                        }
+                      },
+                      child: Text('من الساعة ${startTime.format(context)}'),
+                    ),
+                    OutlinedButton(
+                      onPressed: () async {
+                        final picked = await showTimePicker(
+                          context: context,
+                          initialTime: endTime,
+                        );
+                        if (picked != null) {
+                          setDialogState(() => endTime = picked);
+                        }
+                      },
+                      child: Text('حتى الساعة ${endTime.format(context)}'),
+                    ),
+                  ],
+                ],
+              ),
+            ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.of(dialogContext).pop(),
+                child: const Text('إلغاء'),
+              ),
+              FilledButton(
+                onPressed: selectedFieldId == null ||
+                        reasonController.text.trim().isEmpty
+                    ? null
+                    : () => Navigator.of(dialogContext).pop((
+                        selectedFieldId!,
+                        selectedDate,
+                        startTime,
+                        endTime,
+                        wholeDay,
+                        reasonController.text.trim(),
+                      )),
+                child: const Text('حفظ'),
+              ),
+            ],
+          ),
+        ),
+      );
+      if (result == null || !mounted) return;
+      final (fieldId, date, start, end, isWholeDay, reason) = result;
+      final startAt = timezone.TZDateTime(
+        _damascus,
+        date.year,
+        date.month,
+        date.day,
+        isWholeDay ? 0 : start.hour,
+        isWholeDay ? 0 : start.minute,
+      );
+      final endAt = isWholeDay
+          ? timezone.TZDateTime(_damascus, date.year, date.month, date.day + 1)
+          : timezone.TZDateTime(
+              _damascus,
+              date.year,
+              date.month,
+              date.day,
+              end.hour,
+              end.minute,
+            );
+      if (!isWholeDay && !endAt.isAfter(startAt)) {
+        _showMessage('يجب أن يكون وقت النهاية بعد وقت البداية في اليوم نفسه.');
+        return;
+      }
+      await ref.read(bookingServiceProvider).addFieldMaintenance(
+            fieldId: fieldId,
+            startAt: startAt,
+            endAt: endAt,
+            reason: reason,
+          );
+    } on BookingServiceException catch (error) {
+      if (mounted) _showMessage(error.message);
+    } finally {
+      reasonController.dispose();
+    }
+  }
+
+  Future<void> _removeMaintenance(String maintenanceId, String fieldId) async {
+    if (fieldId.isEmpty) return;
+    try {
+      await ref.read(bookingServiceProvider).removeFieldMaintenance(
+            fieldId: fieldId,
+            maintenanceId: maintenanceId,
+          );
+      if (mounted) _showMessage('تم إلغاء فترة الصيانة.');
+    } on BookingServiceException catch (error) {
+      if (mounted) _showMessage(error.message);
+    }
   }
 
   Future<void> _rescheduleBooking(BookingModel booking) async {
@@ -121,9 +567,6 @@ class _OwnerBookingsScreenState extends ConsumerState<OwnerBookingsScreen> {
     }
   }
 
-  // ... (باقي دوال _openMaintenanceManager و _createMaintenance و _removeMaintenance كما هي) ...
-  // (اختصاراً للوقت، سأضع الكود الكامل أدناه)
-
   String _statusLabel(BookingStatus status) {
     return switch (status) {
       BookingStatus.pending => 'بانتظار التأكيد',
@@ -142,10 +585,7 @@ class _OwnerBookingsScreenState extends ConsumerState<OwnerBookingsScreen> {
     };
   }
 
-  Future<void> _updateStatus(
-    BookingModel booking,
-    BookingStatus status,
-  ) async {
+  Future<void> _updateStatus(BookingModel booking, BookingStatus status) async {
     setState(() => _updatingBookingIds.add(booking.bookingId));
     try {
       await ref.read(bookingServiceProvider).updateBookingStatus(
@@ -273,6 +713,11 @@ class _OwnerBookingsScreenState extends ConsumerState<OwnerBookingsScreen> {
       },
       actions: [
         IconButton(
+          tooltip: 'تصدير التقرير (CSV)',
+          onPressed: _exportToCsv,
+          icon: const Icon(Icons.download_outlined),
+        ),
+        IconButton(
           tooltip: 'الملف الشخصي',
           onPressed: () => Navigator.of(context).push(
             MaterialPageRoute<void>(builder: (_) => ProfileScreen(user: widget.owner)),
@@ -285,11 +730,27 @@ class _OwnerBookingsScreenState extends ConsumerState<OwnerBookingsScreen> {
           icon: const Icon(Icons.logout),
         ),
       ],
+      floatingActionButton: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          FloatingActionButton.small(
+            heroTag: 'manual-booking',
+            onPressed: _addManualBooking,
+            tooltip: 'إضافة حجز يدوي',
+            child: const Icon(Icons.add_circle_outline),
+          ),
+          const SizedBox(height: 8),
+          FloatingActionButton.extended(
+            heroTag: 'maintenance',
+            onPressed: _openMaintenanceManager,
+            icon: const Icon(Icons.build_outlined),
+            label: const Text('أوقات الصيانة'),
+          ),
+        ],
+      ),
       body: Column(
         children: [
-          // لوحة الإحصائيات اليومية
           OwnerAnalyticsPanel(ownerId: widget.owner.uid),
-          
           Expanded(
             child: StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
               stream: bookingsStream,
@@ -319,21 +780,17 @@ class _OwnerBookingsScreenState extends ConsumerState<OwnerBookingsScreen> {
                   }
                 }
                 bookings.sort((a, b) => a.startAt.compareTo(b.startAt));
+                _currentBookings = bookings;
 
                 final now = DateTime.now();
-                // بداية اليوم (منتصف الليل)
                 final startOfToday = DateTime(now.year, now.month, now.day);
-                // نهاية يوم غد (منتصف ليل اليوم الذي يليه)
                 final endOfTomorrow = DateTime(now.year, now.month, now.day + 2);
 
-                // تصفية الحجوزات
                 final visibleBookings = bookings.where((booking) {
                   if (_selectedSection == 0) {
-                    // قسم اليوم والغد: يعرض حجوزات اليوم الحالي والغد
                     return booking.startAt.isAfter(startOfToday) && 
                            booking.startAt.isBefore(endOfTomorrow);
                   } else {
-                    // القسم المستقبلي: يعرض الحجوزات بعد يوم غد
                     return booking.startAt.isAfter(endOfTomorrow) || 
                            booking.startAt.isAtSameMomentAs(endOfTomorrow);
                   }
@@ -459,14 +916,11 @@ class _OwnerBookingCard extends StatelessWidget {
               ],
             ),
             const SizedBox(height: 8),
-            // 🚀 بيانات العميل
             Text('العميل: ${booking.customerName}', style: const TextStyle(fontWeight: FontWeight.bold)),
             const SizedBox(height: 4),
-            // 🚀 الموعد
             Text('من: ${dateTime(booking.startAt)}'),
             Text('إلى: ${dateTime(booking.endAt)}'),
             const SizedBox(height: 8),
-            // 🚀 السعر
             Text('الإجمالي: ${booking.totalPrice.toStringAsFixed(0)} USD', style: TextStyle(color: Theme.of(context).colorScheme.primary, fontWeight: FontWeight.bold)),
             
             if (canManage) ...[

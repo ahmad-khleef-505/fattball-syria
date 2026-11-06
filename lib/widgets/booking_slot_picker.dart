@@ -9,7 +9,7 @@ class BookingSlotPicker extends StatefulWidget {
     super.key,
     required this.field,
     required this.bookings,
-    required this.selectedDay, // <--- هذا هو المتغير الذي كان ناقصاً
+    required this.selectedDay,
     required this.onSlotSelected,
   });
 
@@ -42,67 +42,112 @@ class _BookingSlotPickerState extends State<BookingSlotPicker> {
       widget.selectedDay.day,
     );
 
-    final openHour = int.tryParse(widget.field.openTime.split(':').first) ?? 8;
-    final closeHour = int.tryParse(widget.field.closeTime.split(':').first) ?? 23;
+    // قراءة وقت الفتح والإغلاق بدقة (ساعة ودقيقة)
+    final openParts = widget.field.openTime.split(':');
+    final openHour = int.tryParse(openParts[0]) ?? 8;
+    final openMinute = openParts.length > 1 ? int.tryParse(openParts[1]) ?? 0 : 0;
 
-    final slots = <DateTimeRange>[];
-    for (var hour = openHour; hour < closeHour; hour++) {
-      for (var minute = 0; minute < 60; minute += 30) {
-        final start = timezone.TZDateTime(
-          _damascus,
-          day.year,
-          day.month,
-          day.day,
-          hour,
-          minute,
-        );
-        final end = start.add(const Duration(minutes: 90));
-        
-        if (end.hour > closeHour || (end.hour == closeHour && end.minute > 0)) {
-          continue;
-        }
-        
-        if (start.isBefore(timezone.TZDateTime.now(_damascus))) {
-          continue;
-        }
+    final closeParts = widget.field.closeTime.split(':');
+    final closeHour = int.tryParse(closeParts[0]) ?? 23;
+    final closeMinute = closeParts.length > 1 ? int.tryParse(closeParts[1]) ?? 0 : 0;
 
-        final isBooked = widget.bookings.any((b) {
-          return b.startAt.isBefore(end) && b.endAt.isAfter(start);
-        });
+    final openTime = timezone.TZDateTime(
+      _damascus,
+      day.year,
+      day.month,
+      day.day,
+      openHour,
+      openMinute,
+    );
+    
+    final closeTime = timezone.TZDateTime(
+      _damascus,
+      day.year,
+      day.month,
+      day.day,
+      closeHour,
+      closeMinute,
+    );
 
-        if (!isBooked) {
-          slots.add(DateTimeRange(start: start, end: end));
-        }
+    // توليد الفترات المتتالية كل 90 دقيقة
+    final slots = <_TimeSlot>[];
+    var currentStart = openTime;
+
+    while (true) {
+      final currentEnd = currentStart.add(const Duration(minutes: 90));
+      
+      // إذا كانت الفترة ستتجاوز وقت الإغلاق، نتوقف
+      if (currentEnd.isAfter(closeTime)) {
+        break;
       }
+
+      final isPast = currentStart.isBefore(timezone.TZDateTime.now(_damascus));
+      final isBooked = widget.bookings.any((b) {
+        return b.startAt.isBefore(currentEnd) && b.endAt.isAfter(currentStart);
+      });
+
+      slots.add(_TimeSlot(
+        start: currentStart,
+        end: currentEnd,
+        isAvailable: !isPast && !isBooked,
+      ));
+
+      // الفترة التالية تبدأ من نهاية الفترة الحالية
+      currentStart = currentEnd;
     }
 
     if (slots.isEmpty) {
       return const Center(
         child: Padding(
           padding: EdgeInsets.all(20),
-          child: Text('لا توجد أوقات متاحة في هذا اليوم.'),
+          child: Text(
+            'لا توجد أوقات متاحة في هذا اليوم (تأكد من أوقات عمل الملعب).',
+            style: TextStyle(fontSize: 16, color: Colors.grey),
+            textAlign: TextAlign.center,
+          ),
         ),
       );
     }
 
     return Wrap(
-      spacing: 8,
-      runSpacing: 8,
+      spacing: 10,
+      runSpacing: 10,
       children: slots.map((slot) {
         final isSelected = _selected?.start == slot.start;
+        
         return ChoiceChip(
           label: Text(
-            '${slot.start.hour.toString().padLeft(2, '0')}:${slot.start.minute.toString().padLeft(2, '0')}',
+            '${slot.start.hour.toString().padLeft(2, '0')}:${slot.start.minute.toString().padLeft(2, '0')} - '
+            '${slot.end.hour.toString().padLeft(2, '0')}:${slot.end.minute.toString().padLeft(2, '0')}'
+            '${!slot.isAvailable ? "\n(محجوز)" : ""}',
+            textAlign: TextAlign.center,
+            style: TextStyle(
+              color: !slot.isAvailable 
+                  ? Colors.grey 
+                  : (isSelected ? Colors.white : Colors.black87),
+              fontWeight: isSelected ? FontWeight.bold : FontWeight.normal,
+            ),
           ),
           selected: isSelected,
-          onSelected: (selected) {
-            setState(() {
-              _selected = selected ? slot : null;
-              widget.onSlotSelected(_selected);
-            });
-          },
+          selectedColor: Theme.of(context).colorScheme.primary,
+          onSelected: !slot.isAvailable 
+              ? null 
+              : (selected) {
+                  setState(() {
+                    _selected = selected ? DateTimeRange(start: slot.start, end: slot.end) : null;
+                    widget.onSlotSelected(_selected);
+                  });
+                },
         );
       }).toList(),
     );
   }
+}
+
+class _TimeSlot {
+  final DateTime start;
+  final DateTime end;
+  final bool isAvailable;
+
+  _TimeSlot({required this.start, required this.end, required this.isAvailable});
 }

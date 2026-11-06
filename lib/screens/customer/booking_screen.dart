@@ -2,19 +2,14 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:fattball/models/booking_model.dart';
 import 'package:fattball/models/coach_model.dart';
 import 'package:fattball/models/field_model.dart';
-import 'package:fattball/models/promo_code_model.dart';
 import 'package:fattball/models/user_model.dart';
 import 'package:fattball/providers/auth_provider.dart';
 import 'package:fattball/services/booking_service.dart';
-import 'package:fattball/services/promo_code_service.dart';
 import 'package:fattball/widgets/booking_slot_picker.dart';
 import 'package:fattball/widgets/glass_snack_bar.dart';
 import 'package:fattball/widgets/responsive_scaffold.dart';
-import 'package:fattball/widgets/weather_widgets.dart';
-import 'package:firebase_storage/firebase_storage.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:image_picker/image_picker.dart';
 import 'package:flutter/services.dart';
 import 'package:timezone/data/latest.dart' as timezone_data;
 import 'package:timezone/timezone.dart' as timezone;
@@ -39,17 +34,8 @@ class _BookingScreenState extends ConsumerState<BookingScreen> {
   late final timezone.Location _damascus;
   DateTimeRange? _selectedSlot;
   DateTime _selectedDay = DateTime.now();
-  final _imagePicker = ImagePicker();
-  final _promoController = TextEditingController();
   final _childNameController = TextEditingController();
   final _childAgeController = TextEditingController();
-  XFile? _depositReceipt;
-  Uint8List? _depositReceiptBytes;
-  PromoCodeModel? _appliedPromo;
-  bool _isCheckingPromo = false;
-  bool _depositRequired = false;
-  bool _cashPaymentConfirmed = false;
-  String _depositMethod = 'cash';
   bool _isSubmitting = false;
 
   @override
@@ -61,7 +47,6 @@ class _BookingScreenState extends ConsumerState<BookingScreen> {
 
   @override
   void dispose() {
-    _promoController.dispose();
     _childNameController.dispose();
     _childAgeController.dispose();
     super.dispose();
@@ -81,33 +66,6 @@ class _BookingScreenState extends ConsumerState<BookingScreen> {
       _selectedDay = newDay;
       _selectedSlot = null;
     });
-  }
-
-  Future<void> _applyPromoCode() async {
-    final code = _promoController.text.trim();
-    if (code.isEmpty) {
-      _showMessage('أدخل كود الخصم أولاً.');
-      return;
-    }
-
-    setState(() => _isCheckingPromo = true);
-    try {
-      final promo = await ref.read(promoCodeServiceProvider).validatePromoCode(
-            fieldId: widget.field.fieldId,
-            ownerId: widget.field.ownerId,
-            code: code,
-          );
-      if (!mounted) return;
-      setState(() => _appliedPromo = promo);
-      _showMessage('تم تطبيق خصم ${promo.discountPercent}% بنجاح.');
-    } on PromoCodeServiceException catch (error) {
-      if (mounted) {
-        setState(() => _appliedPromo = null);
-        _showMessage(error.message);
-      }
-    } finally {
-      if (mounted) setState(() => _isCheckingPromo = false);
-    }
   }
 
   Future<void> _submit() async {
@@ -132,9 +90,6 @@ class _BookingScreenState extends ConsumerState<BookingScreen> {
             customer: widget.customer,
             startAt: slot.start,
             endAt: slot.end,
-            depositRequired: _depositRequired,
-            depositMethod: _depositMethod,
-            promoCode: _appliedPromo?.code,
             coach: widget.coach,
             trainingChildName: widget.coach == null ? null : childName,
             trainingChildAge: widget.coach == null ? null : childAge,
@@ -210,6 +165,12 @@ class _BookingScreenState extends ConsumerState<BookingScreen> {
                           '${widget.field.pricePerHour.toStringAsFixed(0)} ${_getCurrencySymbol(widget.field.currency)} / 90 دقيقة',
                           style: TextStyle(color: Theme.of(context).colorScheme.primary, fontWeight: FontWeight.bold),
                         ),
+                        const SizedBox(height: 6),
+                        // 🚀 عرض أوقات العمل الفعلية للتوضيح
+                        Text(
+                          'أوقات العمل: ${widget.field.openTime} إلى ${widget.field.closeTime}',
+                          style: TextStyle(color: Theme.of(context).colorScheme.secondary, fontWeight: FontWeight.bold),
+                        ),
                       ],
                     ),
                   ),
@@ -277,33 +238,6 @@ class _BookingScreenState extends ConsumerState<BookingScreen> {
                   onSlotSelected: (slot) => setState(() => _selectedSlot = slot),
                 ),
                 const SizedBox(height: 20),
-                if (_selectedSlot != null) ...[
-                  Card(
-                    child: Padding(
-                      padding: const EdgeInsets.all(14),
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.stretch,
-                        children: [
-                          TextField(
-                            controller: _promoController,
-                            decoration: InputDecoration(
-                              labelText: 'كود الخصم',
-                              suffixIcon: IconButton(
-                                icon: const Icon(Icons.check),
-                                onPressed: _isCheckingPromo ? null : _applyPromoCode,
-                              ),
-                            ),
-                          ),
-                          SwitchListTile(
-                            title: const Text('دفع عربون لتأكيد الحجز'),
-                            value: _depositRequired,
-                            onChanged: (val) => setState(() => _depositRequired = val),
-                          ),
-                        ],
-                      ),
-                    ),
-                  ),
-                ],
               ],
             ),
           );

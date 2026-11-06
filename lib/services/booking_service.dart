@@ -336,6 +336,109 @@ class BookingService {
     }
   }
 
+  // 🚀 دالة إضافة حجز يدوي من قبل صاحب الملعب
+  Future<void> createManualBooking({
+    required String ownerId,
+    required String fieldId,
+    required String customerName,
+    required DateTime startAt,
+    required DateTime endAt,
+  }) async {
+    if (_auth.currentUser?.uid != ownerId) {
+      throw const BookingServiceException('سجّل الدخول بحساب صاحب الملعب.');
+    }
+    if (!startAt.isAfter(DateTime.now().toUtc()) || !endAt.isAfter(startAt)) {
+      throw const BookingServiceException('وقت الحجز غير صالح أو في الماضي.');
+    }
+
+    final startUtc = startAt.toUtc();
+    final endUtc = endAt.toUtc();
+    final dayKeys = _dayKeys(startUtc, endUtc);
+    
+    final bookingRef = _firestore.collection('bookings').doc();
+    final lockRefs = dayKeys
+        .map((dayKey) => _firestore
+            .collection('booking_locks')
+            .doc('${fieldId}_$dayKey'))
+        .toList();
+
+    try {
+      await _firestore.runTransaction<void>((transaction) async {
+        final fieldRef = _firestore.collection('fields').doc(fieldId);
+        final fieldSnapshot = await transaction.get(fieldRef);
+        if (!fieldSnapshot.exists) {
+          throw const BookingServiceException('الملعب غير موجود.');
+        }
+        final priceValue = fieldSnapshot.data()?['pricePerHour'];
+        final price = (priceValue is num) ? priceValue.toDouble() : 0.0;
+        final totalPrice = _roundCurrency(price * endUtc.difference(startUtc).inMinutes / 60);
+
+        final lockSnapshots = <DocumentSnapshot<Map<String, dynamic>>>[];
+        for (final lockRef in lockRefs) {
+          lockSnapshots.add(await transaction.get(lockRef));
+        }
+
+        // التحقق من عدم وجود تعارض
+        for (final lockSnapshot in lockSnapshots) {
+          final reservations = lockSnapshot.data()?['reservations'] as Map<String, dynamic>?;
+          if (reservations != null) {
+            for (final reservation in reservations.values) {
+              if (_isOverlappingReservation(reservation, startUtc, endUtc)) {
+                throw const BookingServiceException('هذا الوقت محجوز بالفعل في التطبيق.');
+              }
+            }
+          }
+        }
+
+        // إنشاء الحجز
+        final booking = BookingModel(
+          bookingId: bookingRef.id,
+          fieldId: fieldId,
+          ownerId: ownerId,
+          customerId: 'manual_entry', // معرف وهمي لأن الحجز يدوي
+          customerName: customerName,
+          startAt: startUtc,
+          endAt: endUtc,
+          status: BookingStatus.confirmed, // الحجز اليدوي مؤكد افتراضياً
+          totalPrice: totalPrice,
+          createdAt: DateTime.now().toUtc(),
+        );
+
+        transaction.set(bookingRef, booking.toMap());
+
+        // تحديث الأقفال
+        final reservation = {
+          'bookingId': booking.bookingId,
+          'startAt': Timestamp.fromDate(startUtc),
+          'endAt': Timestamp.fromDate(endUtc),
+          'status': BookingStatus.confirmed.name,
+        };
+
+        for (var index = 0; index < lockRefs.length; index++) {
+          final existingReservations = lockSnapshots[index].data()?['reservations'];
+          final reservations = existingReservations == null
+              ? <String, dynamic>{}
+              : Map<String, dynamic>.from(existingReservations as Map<dynamic, dynamic>);
+          
+          reservations[booking.bookingId] = reservation;
+          
+          transaction.set(
+            lockRefs[index],
+            {
+              'fieldId': fieldId,
+              'ownerId': ownerId,
+              'bookingId': booking.bookingId,
+              'reservations': reservations,
+            },
+            SetOptions(merge: true),
+          );
+        }
+      });
+    } on FirebaseException catch (error) {
+      throw BookingServiceException(_firebaseErrorMessage(error.code));
+    }
+  }
+
   Future<void> updateBookingStatus({
     required String bookingId,
     required String ownerId,
@@ -355,6 +458,9 @@ class BookingService {
     }
 
     final bookingRef = _firestore.collection('bookings').doc(bookingId);
+    String customerId = '';
+    String fieldId = '';
+    
     try {
       await _firestore.runTransaction<void>((transaction) async {
         final bookingSnapshot = await transaction.get(bookingRef);
@@ -365,6 +471,9 @@ class BookingService {
         if (bookingData['ownerId'] != ownerId) {
           throw const BookingServiceException('هذا الحجز لا يتبع حسابك.');
         }
+
+        customerId = bookingData['customerId'] ?? '';
+        fieldId = bookingData['fieldId'] ?? '';
 
         final currentStatus = bookingData['status'];
         if (currentStatus == status.name) return;
@@ -380,10 +489,7 @@ class BookingService {
 
         final startAt = bookingData['startAt'];
         final endAt = bookingData['endAt'];
-        final fieldId = bookingData['fieldId'];
-        if (startAt is! Timestamp ||
-            endAt is! Timestamp ||
-            fieldId is! String) {
+        if (startAt is! Timestamp || endAt is! Timestamp) {
           throw const BookingServiceException(
             'بيانات وقت الحجز أو الملعب غير صالحة.',
           );
@@ -449,6 +555,27 @@ class BookingService {
           );
         }
       });
+
+      // 🚀 إنشاء الإشعار بعد نجاح التحديث
+      if (status == BookingStatus.confirmed || status == BookingStatus.cancelled) {
+        // جلب اسم الملعب
+        final fieldDoc = await _firestore.collection('fields').doc(fieldId).get();
+        final fieldName = fieldDoc.data()?['name'] ?? 'الملعب';
+
+        final title = status == BookingStatus.confirmed ? 'تم تأكيد حجزك' : 'تم رفض حجزك';
+        final body = status == BookingStatus.confirmed 
+            ? 'تمت الموافقة على حجزك في $fieldName. نتمنى لك وقتاً ممتعاً!'
+            : 'نعتذر، تم رفض حجزك في $fieldName. يمكنك اختيار وقت آخر.';
+
+        await _firestore.collection('notifications').add({
+          'userId': customerId,
+          'title': title,
+          'body': body,
+          'isRead': false,
+          'createdAt': FieldValue.serverTimestamp(),
+        });
+      }
+
     } on BookingServiceException {
       rethrow;
     } on FirebaseException catch (error) {

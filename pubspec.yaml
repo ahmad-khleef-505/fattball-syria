@@ -33,6 +33,10 @@ dependencies:
   add_2_calendar: ^3.0.1
   share_plus: ^10.1.2
   shared_preferences: ^2.3.0
+  qr_flutter: ^4.1.0
+  # 🚀 الحزم الجديدة لتصدير CSV
+  csv: ^6.0.0
+  path_provider: ^2.1.4
 
 dev_dependencies:
   flutter_test:

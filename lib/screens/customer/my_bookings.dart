@@ -14,6 +14,11 @@ import 'package:fattball/widgets/glass_snack_bar.dart';
 import 'package:timezone/data/latest.dart' as timezone_data;
 import 'package:timezone/timezone.dart' as timezone;
 
+// 🚀 استيرادات مكتبات PDF
+import 'package:pdf/pdf.dart';
+import 'package:pdf/widgets.dart' as pw;
+import 'package:printing/printing.dart';
+
 class MyBookingsScreen extends ConsumerStatefulWidget {
   const MyBookingsScreen({super.key, required this.customer});
 
@@ -135,7 +140,6 @@ class _MyBookingsScreenState extends ConsumerState<MyBookingsScreen> {
       actions: [
         IconButton(
           tooltip: 'تسجيل الخروج',
-          // تم ربط الزر بدالة التأكيد
           onPressed: _confirmSignOut,
           icon: const Icon(Icons.logout),
         ),
@@ -215,6 +219,69 @@ class _BookingCard extends StatelessWidget {
   final String Function(BookingStatus status) statusLabel;
   final Color Function(BuildContext context, BookingStatus status) statusColor;
 
+  // 🚀 دالة توليد ومشاركة التذكرة كـ PDF
+  Future<void> _sharePdf(BuildContext context, String fieldName) async {
+    try {
+      // 1. تحميل الخط العربي
+      final font = await PdfGoogleFonts.cairoRegular();
+      final fontBold = await PdfGoogleFonts.cairoBold();
+
+      // 2. إنشاء مستند PDF
+      final pdf = pw.Document();
+
+      pdf.addPage(
+        pw.Page(
+          pageFormat: PdfPageFormat.a5,
+          theme: pw.ThemeData.withFont(
+            base: font,
+            bold: fontBold,
+          ),
+          build: (pw.Context context) {
+            return pw.Container(
+              decoration: pw.BoxDecoration(
+                border: pw.Border.all(color: PdfColors.green800, width: 2),
+                borderRadius: pw.BorderRadius.circular(10),
+              ),
+              padding: const pw.EdgeInsets.all(20),
+              child: pw.Column(
+                crossAxisAlignment: pw.CrossAxisAlignment.center,
+                children: [
+                  pw.Text('تذكرة حجز - Fattball', style: pw.TextStyle(fontSize: 22, fontWeight: pw.FontWeight.bold, color: PdfColors.green800)),
+                  pw.SizedBox(height: 20),
+                  pw.Text('اسم الملعب: $fieldName', style: const pw.TextStyle(fontSize: 16)),
+                  pw.SizedBox(height: 10),
+                  pw.Text('اسم العميل: ${booking.customerName}', style: const pw.TextStyle(fontSize: 16)),
+                  pw.SizedBox(height: 10),
+                  pw.Text('التاريخ: ${dateTime(booking.startAt)}', style: const pw.TextStyle(fontSize: 14)),
+                  pw.Text('الوقت: من ${dateTime(booking.startAt).split('  ').last} إلى ${dateTime(booking.endAt).split('  ').last}', style: const pw.TextStyle(fontSize: 14)),
+                  pw.SizedBox(height: 20),
+                  pw.BarcodeWidget(
+                    barcode: pw.Barcode.qrCode(),
+                    data: booking.bookingId,
+                    width: 120,
+                    height: 120,
+                  ),
+                  pw.SizedBox(height: 20),
+                  pw.Text('يرجى إبراز هذه التذكرة عند الدخول', style: const pw.TextStyle(fontSize: 12, color: PdfColors.grey700)),
+                ],
+              ),
+            );
+          },
+        ),
+      );
+
+      // 3. مشاركة الملف
+      await Printing.sharePdf(bytes: await pdf.save(), filename: 'Fattball_Ticket_${booking.bookingId}.pdf');
+      
+    } catch (e) {
+      if (context.mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          glassSnackBar(content: const Text('تعذر إنشاء التذكرة. تحقق من اتصالك بالإنترنت.')),
+        );
+      }
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     final fieldFuture = FirebaseFirestore.instance
@@ -250,39 +317,53 @@ class _BookingCard extends StatelessWidget {
           currencyCode: AppConstants.currencyCode,
           discountInfo: booking.promoCode == null
               ? null
-              : 'كود ${booking.promoCode} — خصم ${booking.discountPercent}%'
-                  '${booking.subtotalPrice == null ? '' : ' (وفرت ${(booking.subtotalPrice! - booking.totalPrice).toStringAsFixed(2)} USD)'}',
+              : 'كود ${booking.promoCode} — خصم ${booking.discountPercent}%',
           depositInfo: booking.depositRequired
-              ? 'العربون ${booking.depositAmount.toStringAsFixed(2)} USD — '
-                  '${switch (booking.depositStatus) {
-                'pending_approval' => 'بانتظار موافقة صاحب الملعب',
-                'approved' => 'تمت الموافقة',
-                'rejected' => 'لم تتم الموافقة',
-                _ => 'قيد المراجعة',
-              }}'
+              ? 'العربون ${booking.depositAmount.toStringAsFixed(2)} USD'
               : null,
           trainingInfo: booking.coachId == null
               ? null
-              : 'جلسة تدريب مع ${booking.coachName ?? 'المدرب'} '
-                  'للطفل ${booking.trainingChildName ?? ''}'
-                  '${booking.trainingChildAge == null ? '' : ' (${booking.trainingChildAge} سنة)'}',
+              : 'جلسة تدريب مع ${booking.coachName ?? 'المدرب'}',
         ),
         const SizedBox(height: 8),
         Align(
           alignment: AlignmentDirectional.centerEnd,
-          child: OutlinedButton.icon(
-            icon: const Icon(Icons.calendar_month, size: 18),
-            label: const Text('أضف إلى تقويمي'),
-            onPressed: () {
-              final Event event = Event(
-                title: 'مباراة في ملعب ${booking.fieldId}',
-                description: 'تم الحجز عبر تطبيق Fattball',
-                location: 'سوريا',
-                startDate: booking.startAt,
-                endDate: booking.endAt,
-              );
-              Add2Calendar.addEvent2Cal(event);
-            },
+          child: Wrap(
+            spacing: 8,
+            runSpacing: 8,
+            children: [
+              OutlinedButton.icon(
+                icon: const Icon(Icons.calendar_month, size: 18),
+                label: const Text('أضف إلى تقويمي'),
+                onPressed: () {
+                  final Event event = Event(
+                    title: 'مباراة في ملعب ${booking.fieldId}',
+                    description: 'تم الحجز عبر تطبيق Fattball',
+                    location: 'سوريا',
+                    startDate: booking.startAt,
+                    endDate: booking.endAt,
+                  );
+                  Add2Calendar.addEvent2Cal(event);
+                },
+              ),
+              // 🚀 زر مشاركة الـ PDF
+              FilledButton.icon(
+                icon: const Icon(Icons.picture_as_pdf, size: 18),
+                label: const Text('مشاركة التذكرة'),
+                style: FilledButton.styleFrom(
+                  backgroundColor: Theme.of(context).colorScheme.secondary,
+                  foregroundColor: Theme.of(context).colorScheme.onSecondary,
+                ),
+                onPressed: () async {
+                  // جلب اسم الملعب لاستخدامه في التذكرة
+                  final snapshot = await fieldFuture;
+                  final fieldName = snapshot.data()?['name'] ?? 'الملعب';
+                  if (context.mounted) {
+                    _sharePdf(context, fieldName);
+                  }
+                },
+              ),
+            ],
           ),
         ),
       ],

@@ -1,10 +1,11 @@
+import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:fattball/models/field_model.dart';
 import 'package:fattball/models/user_model.dart';
 import 'package:fattball/screens/customer/booking_screen.dart';
-import 'package:fattball/screens/customer/field_coaches_screen.dart';
 import 'package:fattball/widgets/responsive_scaffold.dart';
 import 'package:fattball/widgets/glass_snack_bar.dart';
 import 'package:fattball/widgets/field_reviews_section.dart';
+import 'package:fattball/widgets/qr_code_dialog.dart'; // 🚀 استيراد ملف الـ QR
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:share_plus/share_plus.dart';
@@ -20,6 +21,15 @@ class FieldDetails extends StatelessWidget {
   final FieldModel field;
   final UserModel customer;
 
+  String _getCurrencySymbol(String currency) {
+    switch (currency) {
+      case 'USD': return '\$';
+      case 'SYP': return 'ل.س';
+      case 'TRY': return 'TL';
+      default: return currency;
+    }
+  }
+
   void _openBooking(BuildContext context) {
     Navigator.of(context).push(
       MaterialPageRoute<void>(
@@ -32,22 +42,19 @@ class FieldDetails extends StatelessWidget {
     final rawPhone = field.ownerPhone?.trim() ?? '';
     if (rawPhone.isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
-        glassSnackBar(
-          content: const Text('لم يضف صاحب الملعب رقم واتساب للتواصل.'),
-        ),
+        glassSnackBar(content: const Text('لم يضف صاحب الملعب رقم واتساب للتواصل.')),
       );
       return;
     }
 
     var phone = rawPhone.replaceAll(RegExp(r'\D'), '');
-    if (phone.startsWith('00')) {
-      phone = phone.substring(2);
-    }
+    if (phone.startsWith('00')) phone = phone.substring(2);
     if (phone.startsWith('0')) {
       phone = '963${phone.substring(1)}';
     } else if (!phone.startsWith('963')) {
       phone = '963$phone';
     }
+    
     if (phone.length < 10 || phone.length > 15) {
       ScaffoldMessenger.of(context).showSnackBar(
         glassSnackBar(content: const Text('رقم واتساب المسجل غير صالح.')),
@@ -59,19 +66,16 @@ class FieldDetails extends StatelessWidget {
         'في ${field.district}، هل يمكن تزويدي بالمواعيد المتاحة؟';
     final uri = Uri.https('wa.me', '/$phone', {'text': message});
     try {
-      final launched = await launchUrl(
-        uri,
-        mode: LaunchMode.externalApplication,
-      );
+      final launched = await launchUrl(uri, mode: LaunchMode.externalApplication);
       if (!launched && context.mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          glassSnackBar(content: const Text('تعذر فتح واتساب على هذا الجهاز.')),
+          glassSnackBar(content: const Text('تعذر فتح واتساب.')),
         );
       }
     } on PlatformException {
       if (context.mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          glassSnackBar(content: const Text('تعذر فتح واتساب على هذا الجهاز.')),
+          glassSnackBar(content: const Text('تعذر فتح واتساب.')),
         );
       }
     }
@@ -79,14 +83,64 @@ class FieldDetails extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final favDocRef = FirebaseFirestore.instance
+        .collection('favorites')
+        .doc('${customer.uid}_${field.fieldId}');
+
     return Scaffold(
       appBar: AppBar(
         title: Text(field.name),
         actions: [
+          // 🚀 زر الـ QR Code الجديد
+          IconButton(
+            icon: const Icon(Icons.qr_code),
+            tooltip: 'رمز الاستجابة السريعة (QR)',
+            onPressed: () {
+              showDialog(
+                context: context,
+                builder: (context) => QrCodeDialog(field: field),
+              );
+            },
+          ),
+          // زر المفضلة (القلب)
+          StreamBuilder<DocumentSnapshot>(
+            stream: favDocRef.snapshots(),
+            builder: (context, snapshot) {
+              final isFavorite = snapshot.hasData && snapshot.data!.exists;
+              return IconButton(
+                icon: Icon(
+                  isFavorite ? Icons.favorite : Icons.favorite_border,
+                  color: isFavorite ? Colors.red : null,
+                ),
+                tooltip: isFavorite ? 'إزالة من المفضلة' : 'إضافة للمفضلة',
+                onPressed: () async {
+                  if (isFavorite) {
+                    await favDocRef.delete();
+                    if (context.mounted) {
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        glassSnackBar(content: const Text('تمت الإزالة من المفضلة.')),
+                      );
+                    }
+                  } else {
+                    await favDocRef.set({
+                      'userId': customer.uid,
+                      'fieldId': field.fieldId,
+                      'createdAt': FieldValue.serverTimestamp(),
+                    });
+                    if (context.mounted) {
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        glassSnackBar(content: const Text('تمت الإضافة إلى المفضلة.')),
+                      );
+                    }
+                  }
+                },
+              );
+            },
+          ),
+          // زر المشاركة
           IconButton(
             icon: const Icon(Icons.share),
             onPressed: () {
-              // تم استخدام الكود المتوافق مع الإصدار 10 من الحزمة
               Share.share(
                 'اسم الملعب: ${field.name}\n'
                 'الموقع: ${field.governorate} - ${field.district}\n'
@@ -110,11 +164,8 @@ class FieldDetails extends StatelessWidget {
                     field.images[index],
                     fit: BoxFit.cover,
                     errorBuilder: (_, __, ___) => ColoredBox(
-                      color:
-                          Theme.of(context).colorScheme.surfaceContainerHighest,
-                      child: const Center(
-                        child: Icon(Icons.broken_image_outlined),
-                      ),
+                      color: Theme.of(context).colorScheme.surfaceContainerHighest,
+                      child: const Center(child: Icon(Icons.broken_image_outlined)),
                     ),
                   ),
                 ),
@@ -124,8 +175,7 @@ class FieldDetails extends StatelessWidget {
                 height: 200,
                 child: ColoredBox(
                   color: Theme.of(context).colorScheme.surfaceContainerHighest,
-                  child:
-                      const Center(child: Icon(Icons.sports_soccer, size: 72)),
+                  child: const Center(child: Icon(Icons.sports_soccer, size: 72)),
                 ),
               ),
             Padding(
@@ -150,7 +200,7 @@ class FieldDetails extends StatelessWidget {
                   _DetailRow(
                     icon: Icons.attach_money,
                     label:
-                        '${field.pricePerHour.toStringAsFixed(2)} USD / ساعة',
+                        '${field.pricePerHour.toStringAsFixed(0)} ${_getCurrencySymbol(field.currency)} / 90 دقيقة',
                   ),
                   const SizedBox(height: 20),
                   Text(
@@ -159,19 +209,6 @@ class FieldDetails extends StatelessWidget {
                   ),
                   const SizedBox(height: 8),
                   Text(field.description),
-                  const SizedBox(height: 24),
-                  OutlinedButton.icon(
-                    onPressed: () => Navigator.of(context).push(
-                      MaterialPageRoute<void>(
-                        builder: (_) => FieldCoachesScreen(
-                          field: field,
-                          customer: customer,
-                        ),
-                      ),
-                    ),
-                    icon: const Icon(Icons.sports),
-                    label: const Text('احجز جلسة تدريب لطفلك'),
-                  ),
                   const SizedBox(height: 24),
                   FieldReviewsSection(
                     fieldId: field.fieldId,
