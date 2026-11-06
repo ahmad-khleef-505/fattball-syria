@@ -34,14 +34,9 @@ dependencies:
   share_plus: ^10.1.2
   shared_preferences: ^2.3.0
   qr_flutter: ^4.1.0
-  # 🚀 الحزم الجديدة لتصدير CSV
   csv: ^6.0.0
   path_provider: ^2.1.4
-  
-  # ✅ إصدار متوافق
   package_info_plus: ^8.1.0
-  
-  # ✅ الحزم الناقصة لملف التذاكر
   pdf: ^3.11.1
   printing: ^5.13.3
 
@@ -51,12 +46,15 @@ dev_dependencies:
   flutter_lints: ^5.0.0
   flutter_launcher_icons: ^0.14.4
 
-# هذا القسم يمنع التعارضات
+# 👇 هذا هو الحل الجذري للمشكلة
+# نستخدم dependency_overrides لإجبار الحزم على الإصدارات المتوافقة
 dependency_overrides:
   vector_math: ^2.2.0
-  web: ^1.0.0 
-  # 👇 السطر الجديد الذي سيحل مشكلة البناء في GitHub Actions
-  image: ^4.2.0 
+  web: ^1.0.0
+  # ✅ إجبار archive على الإصدار الذي يتوقعه image (4.11.0)
+  archive: ^4.4.0
+  # ✅ إجبار image على الإصدار الأحدث الذي يحتوي على إصلاحات
+  image: ^4.11.1
 
 flutter:
   uses-material-design: true
