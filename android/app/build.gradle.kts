@@ -11,7 +11,9 @@ plugins {
 
 android {
     namespace = "com.fattball.syria"
-    compileSdk = flutter.compileSdkVersion
+    
+    // ✅ تم التعديل: تثبيت إصدار SDK على 36 لحل مشكلة التوافق
+    compileSdk = 36 
     ndkVersion = flutter.ndkVersion
 
     compileOptions {
@@ -22,7 +24,9 @@ android {
     defaultConfig {
         applicationId = "com.fattball.syria"
         minSdk = flutter.minSdkVersion
-        targetSdk = flutter.targetSdkVersion
+        
+        // ✅ تم التعديل: تثبيت إصدار target SDK على 36
+        targetSdk = 36 
         versionCode = flutter.versionCode
         versionName = flutter.versionName
     }

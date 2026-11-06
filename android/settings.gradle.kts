@@ -19,9 +19,9 @@ pluginManagement {
 
 plugins {
     id("dev.flutter.flutter-plugin-loader") version "1.0.0"
-    // تم إضافة الأقواس هنا وتصحيح إصدار Kotlin
-    id("com.android.application") version "8.6.0" apply false
-    id("org.jetbrains.kotlin.android") version "1.9.22" apply false
+    // ✅ تم تحديث AGP إلى 8.9.1 و Kotlin إلى 2.1.0
+    id("com.android.application") version "8.9.1" apply false
+    id("org.jetbrains.kotlin.android") version "2.1.0" apply false
 }
 
 include(":app")
