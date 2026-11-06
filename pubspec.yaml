@@ -46,15 +46,16 @@ dev_dependencies:
   flutter_lints: ^5.0.0
   flutter_launcher_icons: ^0.14.4
 
-# 👇 هذا هو الحل الجذري للمشكلة
-# نستخدم dependency_overrides لإجبار الحزم على الإصدارات المتوافقة
+# 👇 هذا هو الحل الجذري: إجبار استخدام إصدارات متوافقة مع Dart 3.6
 dependency_overrides:
+  # ✅ إجبار vector_math على الإصدار 2.2.0 المتوافق مع Dart 3.6
   vector_math: ^2.2.0
-  web: ^1.0.0
-  # ✅ إجبار archive على الإصدار الذي يتوقعه image (4.11.0)
+  # ✅ إجبار archive على إصدار أحدث لحل تعارض image
   archive: ^4.4.0
-  # ✅ إجبار image على الإصدار الأحدث الذي يحتوي على إصلاحات
+  # ✅ إجبار image على إصدار أحدث لحل تعارض archive
   image: ^4.11.1
+  # ✅ منع تعارض الحزم مع Firebase
+  web: ^1.0.0
 
 flutter:
   uses-material-design: true
